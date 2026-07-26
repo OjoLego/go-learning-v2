@@ -1,0 +1,244 @@
+openapi: 3.0.3
+info:
+  title: Dime API
+  version: 1.0.0
+  description: REST API for tracking transactions and budgets.
+servers:
+  - url: http://localhost:8080
+paths:
+  /transactions:
+    post:
+      summary: Create a transaction
+      operationId: createTransaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTransactionRequest'
+            examples:
+              expense:
+                value:
+                  user_id: u1
+                  type: expense
+                  amount: 75.25
+                  category: food
+      responses:
+        '201':
+          description: Transaction created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    get:
+      summary: List a user's transactions
+      operationId: listTransactionsByUser
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+          example: u1
+      responses:
+        '200':
+          description: Transactions for the requested user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Transaction'
+        '400':
+          description: Missing user_id query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /transactions/{id}:
+    get:
+      summary: Get a transaction by ID
+      operationId: getTransactionByID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Matching transaction
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transaction'
+        '404':
+          description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /budgets:
+    post:
+      summary: Create a budget
+      operationId: createBudget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBudgetRequest'
+            examples:
+              food:
+                value:
+                  user_id: u1
+                  category: food
+                  limit: 100
+      responses:
+        '201':
+          description: Budget created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Budget'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /budgets/status:
+    get:
+      summary: Check budget status
+      operationId: checkBudgetStatus
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+          example: u1
+        - name: category
+          in: query
+          required: true
+          schema:
+            type: string
+          example: food
+      responses:
+        '200':
+          description: Budget status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetStatusResponse'
+        '400':
+          description: Missing query parameter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Budget not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    CreateTransactionRequest:
+      type: object
+      required:
+        - user_id
+        - type
+        - amount
+        - category
+      properties:
+        user_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - income
+            - expense
+        amount:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+        category:
+          type: string
+    Transaction:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        type:
+          type: string
+          enum:
+            - income
+            - expense
+        amount:
+          type: number
+          format: double
+        category:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+    CreateBudgetRequest:
+      type: object
+      required:
+        - user_id
+        - category
+        - limit
+      properties:
+        user_id:
+          type: string
+        category:
+          type: string
+        limit:
+          type: number
+          format: double
+          minimum: 0
+          exclusiveMinimum: true
+    Budget:
+      type: object
+      properties:
+        id:
+          type: string
+        user_id:
+          type: string
+        category:
+          type: string
+        limit:
+          type: number
+          format: double
+        spent:
+          type: number
+          format: double
+    BudgetStatusResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+        category:
+          type: string
+        status:
+          type: string
+          enum:
+            - within budget
+            - near limit
+            - over budget
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
