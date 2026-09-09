@@ -11,7 +11,7 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - **Goal**: Install and run PostgreSQL locally, understand basic concepts
 
 ### Phase 2: Schema Design & Manual SQL
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Goal**: Design relational schema, learn SQL fundamentals
 
 ### Phase 3: Migrations
@@ -50,7 +50,7 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 
 ## Current Phase
 
-**Phase 2: Schema Design & Manual SQL**
+**Phase 3: Database Migrations**
 
 ---
 
@@ -62,6 +62,18 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - psql client installed and configured
 - Practice table created and CRUD operations tested
 - All fundamental concepts understood
+
+### Phase 2: Schema Design & Manual SQL
+- Designed database schema for transactions and budgets tables
+- Selected appropriate data types (UUID, DECIMAL, TIMESTAMPTZ)
+- Created CHECK constraints for data integrity (type validation, positive amounts)
+- Implemented UNIQUE constraint on (user_id, category) for budgets
+- Created 4 indexes for query performance
+- Executed SQL files in PostgreSQL using psql
+- Inserted test data and validated constraints work correctly
+- Wrote and tested repository queries (Create, GetByID, ListByUser, AddSpent)
+- Created comprehensive notes documenting all learnings
+- Schema ready for Go integration
 
 ---
 
@@ -104,22 +116,72 @@ _None yet_
 - psql meta-commands: \l, \dt, \d, \dn, \du, \conninfo
 
 #### Concepts Still to Understand
-- Schema design for production tables
-- Relationships between tables
-- Indexes and performance
-- Advanced SQL queries
+- All concepts from Phase 2 now understood!
+
+---
+
+### Phase 2: Schema Design & Manual SQL
+
+#### Objective
+Design the actual database schema for dime-api and practice manual SQL execution before implementing migrations.
+
+#### Tasks
+- [x] Review existing domain models (Transaction, Budget)
+- [x] Review repository interfaces to understand query patterns
+- [x] Learn PostgreSQL data types (UUID, DECIMAL, TIMESTAMPTZ, VARCHAR with CHECK)
+- [x] Learn about constraints (PRIMARY KEY, NOT NULL, UNIQUE, CHECK, DEFAULT)
+- [x] Create transactions table with appropriate columns and constraints
+- [x] Create budgets table with UNIQUE constraint on (user_id, category)
+- [x] Learn about indexes and when to create them
+- [x] Create 4 indexes for query performance
+- [x] Execute SQL files in PostgreSQL using psql
+- [x] Insert test data and validate constraints
+- [x] Test constraint violations (ensure invalid data is rejected)
+- [x] Write SQL queries matching repository interfaces
+- [x] Test all repository queries (Create, GetByID, ListByUser, AddSpent)
+- [x] Document schema design in phase-02-notes.md
+
+#### Current Progress
+100% - Phase 2 Complete
+
+#### Problems Encountered
+_None_
+
+#### Decisions Made
+- **Data Types**: UUID for IDs, DECIMAL(10,2) for money, TIMESTAMPTZ for timestamps
+- **Constraints**: CHECK for type validation (income/expense), CHECK for positive amounts, UNIQUE for budget uniqueness
+- **Reserved Keywords**: Avoided 'limit' by using 'limit_amount'
+- **Index Strategy**: Index all columns used in WHERE and ORDER BY clauses
+
+#### Concepts Learned
+- PostgreSQL data types and Go type mappings
+- DECIMAL vs FLOAT for money (rounding errors with FLOAT)
+- UUID generation with gen_random_uuid()
+- CHECK constraints for data validation
+- UNIQUE constraints for business rules
+- DEFAULT values for auto-generated data
+- Index creation for performance optimization
+- Composite indexes (user_id, category)
+- RETURNING clause for INSERT/UPDATE
+- Parameterized queries ($1, $2, etc.)
+
+#### Concepts Still to Understand
+- Database migrations and version control
+- Go database integration with pgx
+- Transaction management in Go
+- Connection pooling
 
 ---
 
 ## Next Phase
 
-**Phase 2: Schema Design & Manual SQL**
+**Phase 3: Database Migrations**
 
-Design the actual database schema for dime-api:
-- transactions table
-- budgets table
-- Indexes and constraints
-- Relationships between tables
+Learn schema versioning with golang-migrate:
+- Install golang-migrate CLI
+- Create migration files (up/down)
+- Apply migrations programmatically
+- Version tracking in database
 
 ---
 
@@ -181,24 +243,29 @@ _None yet - to be populated as we progress_
 
 ### For Next OpenCode Session
 
-**Current State**: Phase 1 Complete - PostgreSQL Setup
+**Current State**: Phase 2 Complete - Schema Design & Manual SQL
 
 **Immediate Next Step**: 
-Begin Phase 2: Design the actual database schema for dime-api (transactions and budgets tables).
+Begin Phase 3: Database Migrations with golang-migrate.
 
-**Phase 1 Summary**:
-- Docker Compose configured with PostgreSQL 16
-- Local database running on localhost:5432
-- psql client installed and working
-- Practice table created and CRUD operations tested
-- Ready to design production schema
+**Phase 2 Summary**:
+- Database schema designed for transactions and budgets tables
+- Tables created with appropriate data types (UUID, DECIMAL, TIMESTAMPTZ)
+- CHECK constraints implemented for data integrity (type validation, positive amounts)
+- UNIQUE constraint on (user_id, category) for budgets
+- 4 indexes created for query performance
+- Test data inserted and validated
+- Repository queries written and tested
+- Schema design documented in phase-02-notes.md
+- SQL files created in migrations/ folder
 
 **Context for New Session**:
 - This is a Go backend learning project (dime-api) for tracking transactions and budgets
 - Current implementation uses in-memory storage
 - Goal is to migrate to PostgreSQL while learning backend engineering deeply
 - Architecture: Handler → Service → Repository → PostgreSQL
-- Zero external dependencies currently (Go 1.22+ standard library only)
+- Database schema is complete and tested
+- Ready to implement migrations (Phase 3) then Go integration (Phase 4)
 
 **Key Files**:
 - `cmd/api/main.go` - Application entry point
@@ -207,6 +274,15 @@ Begin Phase 2: Design the actual database schema for dime-api (transactions and 
 - `internal/service/` - Business logic
 - `internal/handler/` - HTTP handlers
 - `docs/backend-learning/PROGRESS.md` - This file
+- `docs/backend-learning/phase-02-notes.md` - Phase 2 learnings and documentation
+- `migrations/01_create_transactions.sql` - Transactions table schema
+- `migrations/02_create_budgets.sql` - Budgets table schema
+
+**Database Schema**:
+- **transactions**: id (UUID), user_id (TEXT), type (VARCHAR), amount (DECIMAL), category (TEXT), created_at (TIMESTAMPTZ)
+- **budgets**: id (UUID), user_id (TEXT), category (TEXT), limit_amount (DECIMAL), spent (DECIMAL), updated_at (TIMESTAMPTZ)
+- Constraints: CHECK (amount > 0), CHECK (type IN ('income', 'expense')), UNIQUE(user_id, category)
+- Indexes: idx_transactions_user_id, idx_transactions_user_category, idx_transactions_created_at, idx_budgets_user_category
 
 **Master Plan Location**: Original plan is documented in conversation history.
 Brief summary: 10-phase roadmap from PostgreSQL basics to production readiness.
@@ -215,8 +291,10 @@ Brief summary: 10-phase roadmap from PostgreSQL basics to production readiness.
 
 **Environment Requirements**:
 - Docker Desktop installed and running
+- PostgreSQL 16 container running on localhost:5432
+- Database: dime, User: dime_user, Password: dime_password
+- psql client available
 - Go 1.22+ installed
-- PostgreSQL client (psql) available
 
 ---
 
