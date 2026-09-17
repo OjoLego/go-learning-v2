@@ -1,5 +1,5 @@
 -- Create the budgets table
-CREATE TABLE budgets (
+CREATE TABLE IF NOT EXISTS budgets (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id TEXT NOT NULL,
     category TEXT NOT NULL,
@@ -10,4 +10,4 @@ CREATE TABLE budgets (
 );
 
 -- Index for GetByUserAndCategory queries
-CREATE INDEX idx_budgets_user_category ON budgets(user_id, category);
+CREATE INDEX IF NOT EXISTS idx_budgets_user_category ON budgets(user_id, category);
