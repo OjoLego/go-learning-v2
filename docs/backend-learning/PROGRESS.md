@@ -15,7 +15,7 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - **Goal**: Design relational schema, learn SQL fundamentals
 
 ### Phase 3: Migrations
-- **Status**: NOT STARTED
+- **Status**: COMPLETED
 - **Goal**: Learn schema versioning with golang-migrate
 
 ### Phase 4: Go Database Integration
@@ -50,7 +50,7 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 
 ## Current Phase
 
-**Phase 3: Database Migrations**
+**Phase 4: Go Database Integration**
 
 ---
 
@@ -74,6 +74,21 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - Wrote and tested repository queries (Create, GetByID, ListByUser, AddSpent)
 - Created comprehensive notes documenting all learnings
 - Schema ready for Go integration
+
+### Phase 3: Database Migrations
+- Installed golang-migrate CLI tool (v4.17.1)
+- Created proper migration file structure with up/down pairs
+- Converted Phase 2 SQL into version-controlled migrations:
+  * 001_create_transactions_table.up.sql / .down.sql
+  * 002_create_budgets_table.up.sql / .down.sql
+- Learned migration naming conventions (sequential numbering)
+- Implemented programmatic migration execution in Go
+- Created PostgreSQL repository implementations
+- Removed in-memory repositories (production-standard)
+- Added automatic migration on application startup
+- Tested rollback (down) and re-apply (up) workflows
+- Created comprehensive documentation (phase-03-notes.md)
+- Current migration version: 2 (both migrations applied)
 
 ---
 
@@ -166,22 +181,86 @@ _None_
 - Parameterized queries ($1, $2, etc.)
 
 #### Concepts Still to Understand
-- Database migrations and version control
 - Go database integration with pgx
 - Transaction management in Go
 - Connection pooling
 
 ---
 
+### Phase 3: Database Migrations
+
+#### Objective
+Learn schema versioning with golang-migrate and convert manual SQL into version-controlled migrations that run programmatically from Go.
+
+#### Tasks
+- [x] Understand what database migrations are and why they're essential
+- [x] Install golang-migrate CLI tool (v4.17.1)
+- [x] Learn migration file naming conventions (timestamp-based, up/down pairs)
+- [x] Create 001_create_transactions_table migration (up/down)
+- [x] Create 002_create_budgets_table migration (up/down)
+- [x] Learn about idempotent migrations (IF NOT EXISTS)
+- [x] Understand up vs down migrations
+- [x] Learn version tracking via schema_migrations table
+- [x] Run migrations using CLI
+- [x] Implement programmatic migration execution in Go
+- [x] Add migration status checking in application startup
+- [x] Test rollback (down) and re-apply (up) workflows
+- [x] Create PostgreSQL repository implementations
+- [x] Remove in-memory repositories (production-standard)
+- [x] Clean up old SQL files
+- [x] Document migration workflow in phase-03-notes.md
+
+#### Current Progress
+100% - Phase 3 Complete
+
+#### Problems Encountered
+- Initial go install of golang-migrate lacked PostgreSQL drivers
+- Solution: Downloaded pre-built binary with all drivers included
+- Port conflicts when testing server multiple times
+- Solution: Kill existing processes before restarting
+
+#### Decisions Made
+- **Migration Tool**: golang-migrate (industry standard, supports up/down)
+- **File Naming**: Sequential numbers (001, 002) instead of timestamps for clarity
+- **Idempotency**: Use IF NOT EXISTS for safe re-runs
+- **Architecture**: Always use PostgreSQL in production (removed in-memory switching)
+- **Migration Timing**: Run automatically on application startup
+
+#### Concepts Learned
+- Database migrations = version control for database schema
+- Up migrations apply changes (CREATE, ALTER)
+- Down migrations undo changes (DROP, ALTER back)
+- Version tracking via schema_migrations table
+- Idempotent migrations (safe to run multiple times)
+- Transaction safety in migrations (all-or-nothing)
+- golang-migrate CLI commands (up, down, version, force)
+- Programmatic migration execution from Go code
+- Migration file structure and naming conventions
+- Rollback strategies and when to use them
+- Never modify applied migrations (create new ones instead)
+
+#### Concepts Still to Understand
+- None - Phase 3 complete! Moving to Phase 4 for advanced database topics.
+
+---
+
 ## Next Phase
 
-**Phase 3: Database Migrations**
+**Phase 4: Go Database Integration**
 
-Learn schema versioning with golang-migrate:
-- Install golang-migrate CLI
-- Create migration files (up/down)
-- Apply migrations programmatically
-- Version tracking in database
+Learn advanced Go database patterns:
+- Connection pooling configuration (MaxOpenConns, MaxIdleConns, timeouts)
+- Context-aware queries with cancellation and timeouts
+- Transaction management (Begin, Commit, Rollback, isolation levels)
+- Go database integration with pgx driver
+- Error handling patterns and PostgreSQL error codes
+- Query debugging, logging, and observability
+- Testing database code (integration tests, test database setup)
+- Install and configure database/sql with pgx driver
+- Connection pooling configuration
+- Query execution with context
+- Error handling patterns
+- Testing database connections
 
 ---
 
@@ -207,7 +286,7 @@ Learn schema versioning with golang-migrate:
 - Version tracking in database
 - Multiple source support (files, S3, etc.)
 
-**Status**: Pending implementation
+**Status**: ✅ Implemented - Migrations running automatically on startup
 
 ### AD-003: No ORM for Initial Learning
 **Decision**: Use raw SQL with database/sql instead of an ORM
@@ -243,49 +322,67 @@ _None yet - to be populated as we progress_
 
 ### For Next OpenCode Session
 
-**Current State**: Phase 2 Complete - Schema Design & Manual SQL
+**Current State**: Phase 3 Complete - Database Migrations
 
 **Immediate Next Step**: 
-Begin Phase 3: Database Migrations with golang-migrate.
+Begin Phase 4: Go Database Integration with database/sql and pgx.
 
-**Phase 2 Summary**:
-- Database schema designed for transactions and budgets tables
-- Tables created with appropriate data types (UUID, DECIMAL, TIMESTAMPTZ)
-- CHECK constraints implemented for data integrity (type validation, positive amounts)
-- UNIQUE constraint on (user_id, category) for budgets
-- 4 indexes created for query performance
-- Test data inserted and validated
-- Repository queries written and tested
-- Schema design documented in phase-02-notes.md
-- SQL files created in migrations/ folder
+**Phase 3 Summary**:
+- Installed golang-migrate CLI tool (migrate.exe v4.17.1)
+- Created proper migration files with up/down pairs:
+  * 001_create_transactions_table.up.sql / .down.sql
+  * 002_create_budgets_table.up.sql / .down.sql
+- Implemented programmatic migration execution in cmd/api/main.go
+- Added automatic migration on application startup
+- Created PostgreSQL repository implementations (postgres_budget_repo.go, postgres_transaction_repo.go)
+- Removed in-memory repositories (production-standard code)
+- Tested rollback (down 1) and re-apply (up) workflows
+- Current migration version: 2 (both migrations applied)
+- Documentation created in phase-03-notes.md
 
 **Context for New Session**:
 - This is a Go backend learning project (dime-api) for tracking transactions and budgets
-- Current implementation uses in-memory storage
-- Goal is to migrate to PostgreSQL while learning backend engineering deeply
+- Current implementation uses PostgreSQL with automatic migrations
+- Goal is to deepen Go database integration knowledge
 - Architecture: Handler → Service → Repository → PostgreSQL
-- Database schema is complete and tested
-- Ready to implement migrations (Phase 3) then Go integration (Phase 4)
+- Migrations run automatically on startup
+- Ready to implement advanced database patterns (Phase 4+)
 
 **Key Files**:
-- `cmd/api/main.go` - Application entry point
+- `cmd/api/main.go` - Entry point with migration logic
 - `internal/model/` - Domain models (Transaction, Budget)
-- `internal/repository/` - Repository interfaces + in-memory implementations
+- `internal/repository/interface.go` - Repository interfaces
+- `internal/repository/postgres_budget_repo.go` - PostgreSQL implementation
+- `internal/repository/postgres_transaction_repo.go` - PostgreSQL implementation
 - `internal/service/` - Business logic
 - `internal/handler/` - HTTP handlers
+- `migrations/001_*.sql` and `002_*.sql` - Version-controlled migrations
 - `docs/backend-learning/PROGRESS.md` - This file
-- `docs/backend-learning/phase-02-notes.md` - Phase 2 learnings and documentation
-- `migrations/01_create_transactions.sql` - Transactions table schema
-- `migrations/02_create_budgets.sql` - Budgets table schema
+- `docs/backend-learning/phase-03-notes.md` - Phase 3 documentation
+- `.env` - Database configuration
+- `migrate.exe` - CLI tool for manual migrations
 
 **Database Schema**:
 - **transactions**: id (UUID), user_id (TEXT), type (VARCHAR), amount (DECIMAL), category (TEXT), created_at (TIMESTAMPTZ)
 - **budgets**: id (UUID), user_id (TEXT), category (TEXT), limit_amount (DECIMAL), spent (DECIMAL), updated_at (TIMESTAMPTZ)
+- **schema_migrations**: version (INTEGER), dirty (BOOLEAN) - tracks migration state
 - Constraints: CHECK (amount > 0), CHECK (type IN ('income', 'expense')), UNIQUE(user_id, category)
 - Indexes: idx_transactions_user_id, idx_transactions_user_category, idx_transactions_created_at, idx_budgets_user_category
 
-**Master Plan Location**: Original plan is documented in conversation history.
-Brief summary: 10-phase roadmap from PostgreSQL basics to production readiness.
+**Migration Commands**:
+```powershell
+# Check version
+.\migrate.exe -path migrations -database "postgres://dime_user:dime_password@localhost:5432/dime?sslmode=disable" version
+
+# Rollback 1
+.\migrate.exe -path migrations -database "postgres://dime_user:dime_password@localhost:5432/dime?sslmode=disable" down 1
+
+# Apply migrations
+.\migrate.exe -path migrations -database "postgres://dime_user:dime_password@localhost:5432/dime?sslmode=disable" up
+```
+
+**Master Plan Location**: Original 10-phase roadmap in conversation history.
+Phases 1-3 complete. Phase 4: Go Database Integration starting.
 
 **Current Blockers**: None
 
@@ -295,6 +392,7 @@ Brief summary: 10-phase roadmap from PostgreSQL basics to production readiness.
 - Database: dime, User: dime_user, Password: dime_password
 - psql client available
 - Go 1.22+ installed
+- migrate.exe CLI tool available
 
 ---
 
@@ -302,22 +400,34 @@ Brief summary: 10-phase roadmap from PostgreSQL basics to production readiness.
 
 ### Project Structure
 ```
-cmd/api/main.go                    # Entry point
+cmd/api/main.go                    # Entry point with migrations
 internal/
   model/                           # Domain structs
     transaction.go
     budget.go
-  repository/                      # Data access interfaces
-    transaction_repo.go
-    budget_repo.go
+  repository/                      # Data access
+    interface.go                   # Repository interfaces
+    postgres_budget_repo.go        # PostgreSQL implementation
+    postgres_transaction_repo.go   # PostgreSQL implementation
   service/                         # Business logic
     transaction_service.go
     budget_service.go
   handler/                         # HTTP layer
     transaction_handler.go
     budget_handler.go
+migrations/                        # Database migrations
+  001_create_transactions_table.up.sql
+  001_create_transactions_table.down.sql
+  002_create_budgets_table.up.sql
+  002_create_budgets_table.down.sql
 docs/backend-learning/             # Learning documentation
   PROGRESS.md                      # This file
+  phase-01-notes.md               # Phase 1: PostgreSQL setup
+  phase-02-notes.md               # Phase 2: Schema design
+  phase-03-notes.md               # Phase 3: Migrations
+.env                               # Database configuration
+migrate.exe                        # CLI tool for migrations
+dime-api.exe                       # Compiled binary
 ```
 
 ### Current Architecture Flow
@@ -326,11 +436,10 @@ HTTP Request
   → Handler (parsing, JSON)
     → Service (business logic)
       → Repository (interface)
-        → InMemoryRepo (current)
-        → PostgreSQL (future)
+        → PostgreSQL (current)
 ```
 
-### Repositories (Current - In-Memory)
+### Repositories (Current - PostgreSQL)
 - `TransactionRepository`: Create, GetByID, ListByUser
 - `BudgetRepository`: Create, GetByUserAndCategory, AddSpent
 
@@ -340,8 +449,27 @@ HTTP Request
 - `GET /transactions?user_id=X` - List user's transactions
 - `POST /budgets` - Create budget
 - `GET /budgets/status?user_id=X&category=Y` - Check budget status
+- `GET /swagger` - Swagger UI documentation
+- `GET /openapi.yaml` - OpenAPI specification
+
+### Running the Application
+```powershell
+# Start PostgreSQL (if not running)
+docker-compose up -d
+
+# Run the application (automatically runs migrations)
+.\dime-api.exe
+# or
+go run ./cmd/api
+
+# Application will output:
+# - Current migration version
+# - PostgreSQL connection status
+# - Migration application status
+# - Server startup confirmation
+```
 
 ---
 
-*Last Updated*: Session start
-*Next Session Should Begin*: Phase 1, Milestone 0
+*Last Updated*: Phase 3 Complete
+*Next Session Should Begin*: Phase 4, Go Database Integration
