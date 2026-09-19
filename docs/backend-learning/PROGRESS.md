@@ -23,16 +23,19 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - **Goal**: Production-ready database patterns with pgx, connection pooling, context, and transactions
 
 ### Phase 5: Repository Implementation - Transactions
-- **Status**: NOT STARTED
+- **Status**: COMPLETED (accomplished in Phase 4)
 - **Goal**: Implement PostgreSQL-backed transaction repository
+- **Note**: Completed with full context support and transaction methods
 
 ### Phase 6: Repository Implementation - Budgets
-- **Status**: NOT STARTED
+- **Status**: COMPLETED (accomplished in Phase 4)
 - **Goal**: Implement PostgreSQL-backed budget repository with transactions
+- **Note**: Completed with full context support and transaction methods
 
 ### Phase 7: Integration Testing
-- **Status**: NOT STARTED
+- **Status**: COMPLETED (accomplished in Phase 4)
 - **Goal**: Test repositories against real PostgreSQL
+- **Note**: Docker-based integration tests created and runnable
 
 ### Phase 8: Configuration & Environment
 - **Status**: NOT STARTED
@@ -50,7 +53,9 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 
 ## Current Phase
 
-**Phase 5: Repository Implementation - Transactions** (future enhancement - already completed in Phase 4)
+**Phase 8: Configuration & Environment**
+
+Next: Production-ready configuration patterns, environment management, and operational concerns.
 
 ---
 
@@ -105,6 +110,31 @@ Persistent handoff document for PostgreSQL + Go backend learning project.
 - Created transaction and budget repository integration tests
 - Added test utilities for database setup and cleanup
 - Documented all learnings in phase-04-notes.md
+
+### Phase 5: Repository Implementation - Transactions
+- **Status**: COMPLETED (as part of Phase 4)
+- Implemented PostgreSQL-backed TransactionRepository
+- Full context.Context support for cancellation/timeouts
+- Transaction-aware methods: CreateTx, GetByIDTx
+- All methods: Create, GetByID, ListByUser
+- Integration tests for all repository methods
+
+### Phase 6: Repository Implementation - Budgets
+- **Status**: COMPLETED (as part of Phase 4)
+- Implemented PostgreSQL-backed BudgetRepository
+- Full context.Context support for cancellation/timeouts
+- Transaction-aware methods: CreateTx, AddSpentTx, GetByUserAndCategoryTx
+- All methods: Create, GetByUserAndCategory, AddSpent
+- Integration tests for all repository methods
+
+### Phase 7: Integration Testing
+- **Status**: COMPLETED (as part of Phase 4)
+- Created Docker Compose test environment (docker-compose.test.yml)
+- Built test utilities for database setup and cleanup (internal/testutil/db.go)
+- Created integration tests for TransactionRepository
+- Created integration tests for BudgetRepository
+- Tests run against real PostgreSQL in Docker container
+- Table truncation strategy for test isolation
 
 ---
 
