@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 
@@ -45,7 +46,11 @@ func (h *BudgetHandler) Create(w http.ResponseWriter, r *http.Request) {
 		Spent:    0,
 	}
 
-	created, err := h.service.CreateBudget(b)
+	// Create a context with timeout for the database operation
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	created, err := h.service.CreateBudget(ctx, b)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -64,7 +69,11 @@ func (h *BudgetHandler) Status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, err := h.service.CheckBudgetStatus(userID, category)
+	// Create a context with timeout for the database operation
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	status, err := h.service.CheckBudgetStatus(ctx, userID, category)
 	if err != nil {
 		respondError(w, http.StatusNotFound, err.Error())
 		return

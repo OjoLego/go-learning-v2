@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
@@ -9,21 +10,21 @@ import (
 )
 
 type BudgetService struct {
-	repo repository.BudgetRepository
+	Repo repository.BudgetRepository // Exported for transaction support
 }
 
 func NewBudgetService(repo repository.BudgetRepository) *BudgetService {
-	return &BudgetService{repo: repo}
+	return &BudgetService{Repo: repo}
 }
 
-func (s *BudgetService) CreateBudget(b model.Budget) (model.Budget, error) {
-	return s.repo.Create(b)
+func (s *BudgetService) CreateBudget(ctx context.Context, b model.Budget) (model.Budget, error) {
+	return s.Repo.Create(ctx, b)
 }
 
 // CheckBudgetStatus returns "within budget", "near limit" (>80% spent),
 // or "over budget" for a given user + category.
-func (s *BudgetService) CheckBudgetStatus(userID, category string) (string, error) {
-	b, err := s.repo.GetByUserAndCategory(userID, category)
+func (s *BudgetService) CheckBudgetStatus(ctx context.Context, userID, category string) (string, error) {
+	b, err := s.Repo.GetByUserAndCategory(ctx, userID, category)
 	if err != nil {
 		if errors.Is(err, repository.ErrBudgetNotFound) {
 			return "", fmt.Errorf("no budget set for category %q: %w", category, err)
@@ -49,7 +50,7 @@ func (s *BudgetService) CheckBudgetStatus(userID, category string) (string, erro
 
 // RecordSpend adds to a budget's spent total — called when an expense
 // transaction is recorded against that category.
-func (s *BudgetService) RecordSpend(userID, category string, amount float64) error {
-	_, err := s.repo.AddSpent(userID, category, amount)
+func (s *BudgetService) RecordSpend(ctx context.Context, userID, category string, amount float64) error {
+	_, err := s.Repo.AddSpent(ctx, userID, category, amount)
 	return err
 }

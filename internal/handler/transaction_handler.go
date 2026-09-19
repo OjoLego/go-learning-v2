@@ -1,14 +1,19 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 	"dime-api/internal/service"
 )
+
+// dbTimeout is the maximum duration for database operations
+const dbTimeout = 5 * time.Second
 
 type TransactionHandler struct {
 	service *service.TransactionService
@@ -32,7 +37,11 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	t, err := h.service.RecordTransaction(req.UserID, model.TransactionType(req.Type), req.Amount, req.Category)
+	// Create a context with timeout for the database operation
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	t, err := h.service.RecordTransaction(ctx, req.UserID, model.TransactionType(req.Type), req.Amount, req.Category)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -44,7 +53,11 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 func (h *TransactionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id") // Go 1.22+ path parameter extraction
 
-	t, err := h.service.GetTransaction(id)
+	// Create a context with timeout for the database operation
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	t, err := h.service.GetTransaction(ctx, id)
 	if err != nil {
 		if errors.Is(err, repository.ErrNotFound) {
 			respondError(w, http.StatusNotFound, "transaction not found")
@@ -64,7 +77,11 @@ func (h *TransactionHandler) ListByUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	txns, err := h.service.GetUserTransactions(userID)
+	// Create a context with timeout for the database operation
+	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
+	defer cancel()
+
+	txns, err := h.service.GetUserTransactions(ctx, userID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return

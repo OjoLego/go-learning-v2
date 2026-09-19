@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"context"
 	"errors"
 
 	"dime-api/internal/model"
@@ -14,14 +15,14 @@ var (
 
 // BudgetRepository defines the interface for budget data access
 type BudgetRepository interface {
-	Create(b model.Budget) (model.Budget, error)
-	GetByUserAndCategory(userID, category string) (model.Budget, error)
-	AddSpent(userID, category string, amount float64) (model.Budget, error)
+	Create(ctx context.Context, b model.Budget) (model.Budget, error)
+	GetByUserAndCategory(ctx context.Context, userID, category string) (model.Budget, error)
+	AddSpent(ctx context.Context, userID, category string, amount float64) (model.Budget, error)
 }
 
 // TransactionRepository defines the interface for transaction data access
 type TransactionRepository interface {
-	Create(t model.Transaction) (model.Transaction, error)
-	GetByID(id string) (model.Transaction, error)
-	ListByUser(userID string) ([]model.Transaction, error)
+	Create(ctx context.Context, t model.Transaction) (model.Transaction, error)
+	GetByID(ctx context.Context, id string) (model.Transaction, error)
+	ListByUser(ctx context.Context, userID string) ([]model.Transaction, error)
 }
