@@ -1,58 +1,66 @@
-# Phase 4: Advanced Database Integration
+# Phase 4: Go Database Integration
 
 ## Overview
 
-Phase 4 builds upon Phase 3's basic database connectivity to implement production-ready database patterns. We migrated from `lib/pq` to `pgx`, added connection pooling, context support, transaction management, comprehensive error handling, and integration testing.
+Phase 4 focuses on production-ready database connectivity patterns in Go. We migrate from `lib/pq` to `pgx`, implement connection pooling, add context support for timeouts and cancellation, create a transaction management system, and add observability through structured logging and health checks.
 
-## Key Achievements
+This phase establishes the foundation that Phases 5, 6, and 7 build upon.
 
-✅ Migrated from `lib/pq` to `pgx` (better performance, active maintenance)
-✅ Configured production-ready connection pooling
-✅ Added context support with 5-second timeouts
-✅ Implemented transaction management for atomic operations
-✅ Added structured logging with `log/slog`
-✅ Created health check endpoint with pool metrics
-✅ Built integration test suite with Docker
+## Learning Objectives
+
+- Understand why `pgx` is preferred over `lib/pq`
+- Configure production-ready connection pooling
+- Implement context-aware database operations
+- Build a transaction management system for atomic operations
+- Add structured logging and health checks
+- Handle database errors properly
 
 ---
 
 ## Milestone 1: pgx Migration & Connection Pooling
 
-### Why pgx?
+### Why Migrate from lib/pq to pgx?
 
-**lib/pq issues:**
-- In maintenance mode (no new features)
-- Uses cgo (slower, C dependency)
-- Limited PostgreSQL-specific features
+**lib/pq Issues:**
+- In maintenance mode (no new features being added)
+- Uses cgo (C bindings) which is slower and has C dependencies
+- Limited support for PostgreSQL-specific features
 
-**pgx advantages:**
-- Native Go implementation (30-50% faster)
-- Actively maintained
+**pgx Advantages:**
+- Native Go implementation (30-50% better performance)
+- Actively maintained with frequent updates
 - Better PostgreSQL type support (arrays, JSONB, UUIDs)
 - Superior context support
+- Built-in connection pooling
 
 ### Migration Changes
+
+The change is minimal - mostly just the import:
 
 **Before (lib/pq):**
 ```go
 import _ "github.com/lib/pq"
+
 db, err := sql.Open("postgres", connStr)
 ```
 
 **After (pgx):**
 ```go
 import _ "github.com/jackc/pgx/v5/stdlib"
+
 db, err := sql.Open("pgx", connStr)
 ```
+
+**Key difference:** The driver name changes from `"postgres"` to `"pgx"`.
 
 ### Connection Pool Configuration
 
 ```go
 // Based on PostgreSQL max_connections = 100
-// Assuming 4 app instances: 100/4 = 25 per instance
-db.SetMaxOpenConns(25)                  // Max concurrent connections
-db.SetMaxIdleConns(10)                  // Keep connections warm
-db.SetConnMaxLifetime(5 * time.Minute)  // Recycle connections
+// Assuming 4 app instances: 100/4 = 25 max connections per instance
+db.SetMaxOpenConns(25)                  // Maximum concurrent connections
+db.SetMaxIdleConns(10)                  // Connections kept warm
+db.SetConnMaxLifetime(5 * time.Minute)  // Recycle connections periodically
 db.SetConnMaxIdleTime(1 * time.Minute)  // Close idle connections
 ```
 
@@ -60,10 +68,16 @@ db.SetConnMaxIdleTime(1 * time.Minute)  // Close idle connections
 
 | Setting | Value | Rationale |
 |---------|-------|-----------|
-| `MaxOpenConns` | 25 | 25% of total, leaves headroom |
+| `MaxOpenConns` | 25 | 25% of total, leaves headroom for admin connections |
 | `MaxIdleConns` | 10 | Quick response for burst traffic |
-| `ConnMaxLifetime` | 5 min | Recycle before server timeout |
+| `ConnMaxLifetime` | 5 min | Recycle before server-side timeout |
 | `ConnMaxIdleTime` | 1 min | Free up unused resources |
+
+**Why these numbers?**
+- Default PostgreSQL `max_connections` is 100
+- With 4 app instances: 100 / 4 = 25 per instance
+- 10 idle keeps connections warm without consuming too many
+- 5-minute lifetime prevents connection leaks and handles network issues
 
 ### Pool Monitoring
 
@@ -75,8 +89,16 @@ slog.Info("Database pool statistics",
     slog.Int("in_use", stats.InUse),
     slog.Int("idle", stats.Idle),
     slog.Int64("wait_count", stats.WaitCount),
+    slog.Duration("wait_duration", stats.WaitDuration),
 )
 ```
+
+**Key Metrics:**
+- `OpenConnections`: Currently open (in_use + idle)
+- `InUse`: Actively executing queries
+- `Idle`: Available in pool
+- `WaitCount`: Total waits for connection (should be low)
+- `WaitDuration`: Total time waiting (should be low)
 
 ---
 
@@ -86,13 +108,13 @@ slog.Info("Database pool statistics",
 
 Without context:
 ```go
-// Can hang forever if database is slow!
+// Can hang forever if database is slow or network is down!
 rows, err := db.Query("SELECT * FROM large_table")
 ```
 
 With context:
 ```go
-// Fails after 5 seconds
+// Fails after 5 seconds with context deadline exceeded
 ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 defer cancel()
 rows, err := db.QueryContext(ctx, "SELECT * FROM large_table")
@@ -102,144 +124,226 @@ rows, err := db.QueryContext(ctx, "SELECT * FROM large_table")
 
 ```
 HTTP Request
-    ↓ (inherits cancellation)
+    ↓ (inherits HTTP context with cancellation)
 Handler: ctx, cancel := context.WithTimeout(r.Context(), 5s)
-    ↓
+    ↓ (new context with 5s timeout)
 Service: RecordTransaction(ctx, ...)
     ↓
 Repository: repo.Create(ctx, transaction)
     ↓
 Database: db.QueryRowContext(ctx, query, ...)
+    ↓
+PostgreSQL: Receives context, cancels query if context expires
 ```
 
-### Implementation Pattern
+**Benefits:**
+- Request cancellation propagates to database
+- Timeout protection against slow queries
+- Resource cleanup when clients disconnect
+- Distributed tracing support
 
-**Repository Interface:**
+### Repository Interface with Context
+
 ```go
+// internal/repository/interface.go
 type TransactionRepository interface {
     Create(ctx context.Context, t model.Transaction) (model.Transaction, error)
     GetByID(ctx context.Context, id string) (model.Transaction, error)
     ListByUser(ctx context.Context, userID string) ([]model.Transaction, error)
 }
+
+type BudgetRepository interface {
+    Create(ctx context.Context, b model.Budget) (model.Budget, error)
+    GetByUserAndCategory(ctx context.Context, userID, category string) (model.Budget, error)
+    AddSpent(ctx context.Context, userID, category string, amount float64) (model.Budget, error)
+}
 ```
 
-**Handler Usage:**
+**Key Design Decision:** `context.Context` as the first parameter - this is the Go standard pattern.
+
+### Handler Implementation
+
 ```go
 const dbTimeout = 5 * time.Second
 
 func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
+    // Create context with timeout from HTTP request context
     ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
     defer cancel()
     
-    t, err := h.service.RecordTransaction(ctx, ...)
-    // ...
+    // Parse request...
+    
+    // Pass context through the stack
+    t, err := h.service.RecordTransaction(ctx, userID, txType, amount, category)
+    if err != nil {
+        // Handle error...
+    }
+    
+    // Return response...
 }
 ```
 
-**Database Query:**
+### Context Cancellation Example
+
 ```go
-func (r *PostgresTransactionRepo) Create(ctx context.Context, t model.Transaction) (model.Transaction, error) {
-    err := r.db.QueryRowContext(ctx, query, ...).Scan(...)
-    // ...
-}
+// Client disconnects after 100ms
+// Handler creates 5s timeout context
+// Database query takes 10s
+
+// What happens:
+// 1. Client disconnects → HTTP context cancelled
+// 2. Handler's context inherits cancellation
+// 3. Database query receives cancellation
+// 4. Query aborted, connection returned to pool
+// 5. Resources freed
 ```
 
 ---
 
 ## Milestone 3: Transaction Management
 
-### Why Transactions?
+### Why Database Transactions?
 
 **Without transactions (risk of inconsistency):**
 ```
 1. Create transaction record ✓
 2. Update budget spent ✗ (fails!)
-Result: Transaction exists but budget not updated
+Result: Transaction exists but budget not updated (INCONSISTENT)
 ```
 
 **With transactions (atomic):**
 ```
 1. Create transaction record ✓
 2. Update budget spent ✗ (fails!)
-Result: Both rolled back, database remains consistent
+Result: Both rolled back, database remains CONSISTENT
 ```
 
-### Transaction Manager
+### Transaction Manager Implementation
 
-Created `internal/database/transaction.go`:
+File: `internal/database/transaction.go`
 
 ```go
+package database
+
+import (
+    "context"
+    "database/sql"
+)
+
+// TransactionManager handles database transactions
 type TransactionManager struct {
     db *sql.DB
 }
 
+// NewTransactionManager creates a new transaction manager
+func NewTransactionManager(db *sql.DB) *TransactionManager {
+    return &TransactionManager{db: db}
+}
+
+// RunInTransaction executes the given function within a database transaction
+// Automatically handles commit/rollback based on function return value
 func (tm *TransactionManager) RunInTransaction(
     ctx context.Context,
     fn func(*sql.Tx) error,
 ) error {
+    // Begin transaction with context support
     tx, err := tm.db.BeginTx(ctx, nil)
     if err != nil {
         return err
     }
     
+    // Handle panics by rolling back
     defer func() {
         if p := recover(); p != nil {
             tx.Rollback()
-            panic(p)
+            panic(p)  // Re-panic after rollback
         }
     }()
     
+    // Execute the function
     if err := fn(tx); err != nil {
-        tx.Rollback()
+        tx.Rollback()  // Rollback on error
         return err
     }
     
-    return tx.Commit()
+    return tx.Commit()  // Commit on success
 }
 ```
 
-### Transaction-Aware Repository Methods
+**Key Features:**
+- `BeginTx`: Starts transaction with context support
+- Panic recovery: Ensures rollback even on panic
+- Automatic rollback: On any error from the function
+- Automatic commit: When function returns nil
 
-Added Tx methods to repositories:
+### Transaction-Aware Repository Pattern
+
+For atomic operations, repositories need transaction-aware methods:
 
 ```go
-// Regular method (uses pool)
+// Standard method (uses connection pool)
 func (r *PostgresTransactionRepo) Create(ctx context.Context, t model.Transaction) (model.Transaction, error)
 
-// Transaction method (uses provided tx)
+// Transaction method (uses provided transaction)
 func (r *PostgresTransactionRepo) CreateTx(ctx context.Context, tx *sql.Tx, t model.Transaction) (model.Transaction, error)
 ```
 
-### Atomic Operation Example
+**The only difference:**
+- Standard: `r.db.QueryRowContext(...)`
+- Transaction: `tx.QueryRowContext(...)`
+
+### Using the Transaction Manager
 
 ```go
-func (s *TransactionService) RecordTransactionAtomic(...) (model.Transaction, error) {
+func (s *TransactionService) RecordTransactionAtomic(
+    ctx context.Context,
+    userID string,
+    txType model.TransactionType,
+    amount float64,
+    category string,
+) (model.Transaction, error) {
     var saved model.Transaction
     
     err := s.txManager.RunInTransaction(ctx, func(tx *sql.Tx) error {
-        // Step 1: Create transaction
-        created, err := txRepo.CreateTx(ctx, tx, t)
+        // Step 1: Create transaction within the database transaction
+        t := model.Transaction{
+            ID:        generateID(),
+            UserID:    userID,
+            Type:      txType,
+            Amount:    amount,
+            Category:  category,
+            CreatedAt: time.Now(),
+        }
+        
+        created, err := s.txRepo.CreateTx(ctx, tx, t)
         if err != nil {
-            return err
+            return err  // Triggers rollback
         }
         saved = created
         
         // Step 2: Update budget (atomic with transaction creation)
         if txType == model.TypeExpense {
-            _, err := budgetRepo.AddSpentTx(ctx, tx, userID, category, amount)
+            _, err := s.budgetRepo.AddSpentTx(ctx, tx, userID, category, amount)
             if err != nil && err != repository.ErrBudgetNotFound {
-                return err // Triggers rollback
+                return err  // Triggers rollback
             }
         }
         
-        return nil // Triggers commit
+        return nil  // Triggers commit
     })
     
     return saved, err
 }
 ```
 
-### Isolation Levels
+**Flow:**
+1. `RunInTransaction` starts database transaction
+2. `CreateTx` runs within transaction
+3. `AddSpentTx` runs within same transaction
+4. If any error → automatic rollback
+5. If all succeed → automatic commit
+
+### Transaction Isolation Levels
 
 ```go
 // Default (Read Committed)
@@ -249,23 +353,28 @@ txManager.RunInTransaction(ctx, fn)
 txManager.RunInTransactionWithIsolation(ctx, sql.LevelSerializable, fn)
 ```
 
-**Isolation Levels Reference:**
+**Isolation Levels:**
 
-| Level | Dirty Read | Non-repeatable Read | Phantom Read |
-|-------|-----------|---------------------|--------------|
-| Read Uncommitted | ✓ | ✓ | ✓ |
-| Read Committed | ✗ | ✓ | ✓ |
-| Repeatable Read | ✗ | ✗ | ✓ |
-| Serializable | ✗ | ✗ | ✗ |
+| Level | Dirty Read | Non-repeatable | Phantom | Use Case |
+|-------|-----------|----------------|---------|----------|
+| Read Uncommitted | ✓ | ✓ | ✓ | Rarely used |
+| Read Committed | ✗ | ✓ | ✓ | Default, good balance |
+| Repeatable Read | ✗ | ✗ | ✓ | Long transactions |
+| Serializable | ✗ | ✗ | ✗ | Critical consistency |
 
 ---
 
 ## Milestone 4: Error Handling & Observability
 
-### Structured Logging
+### Structured Logging with log/slog
 
-Migrated from `log` to `log/slog`:
+**Why slog over standard log?**
+- Structured output (JSON for production)
+- Key-value pairs for filtering/searching
+- Standard library (Go 1.21+)
+- Levels (Debug, Info, Warn, Error)
 
+**Setup:**
 ```go
 // Initialize
 logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -286,26 +395,47 @@ slog.Info("Database connection pool configured",
 // GET /health
 func healthCheck(db *sql.DB) http.HandlerFunc {
     return func(w http.ResponseWriter, r *http.Request) {
+        // Log pool stats on each health check
+        logPoolStats(db)
+        
+        // Check database connectivity with timeout
         ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
         defer cancel()
         
         if err := db.PingContext(ctx); err != nil {
+            slog.Error("Health check failed", slog.String("error", err.Error()))
             w.WriteHeader(http.StatusServiceUnavailable)
-            json.NewEncoder(w).Encode(map[string]string{
-                "status": "unhealthy",
-                "error": "database unreachable",
-            })
+            w.Header().Set("Content-Type", "application/json")
+            fmt.Fprintf(w, `{"status":"unhealthy","error":"database unreachable"}`)
             return
         }
         
+        // Get pool stats
         stats := db.Stats()
-        json.NewEncoder(w).Encode(map[string]interface{}{
-            "status":           "healthy",
-            "open_connections": stats.OpenConnections,
-            "in_use":          stats.InUse,
-            "idle":            stats.Idle,
-        })
+        
+        w.Header().Set("Content-Type", "application/json")
+        w.WriteHeader(http.StatusOK)
+        fmt.Fprintf(w, `{"status":"healthy","open_connections":%d,"in_use":%d,"idle":%d}`,
+            stats.OpenConnections, stats.InUse, stats.Idle)
     }
+}
+```
+
+**Response when healthy:**
+```json
+{
+  "status": "healthy",
+  "open_connections": 12,
+  "in_use": 3,
+  "idle": 9
+}
+```
+
+**Response when unhealthy:**
+```json
+{
+  "status": "unhealthy",
+  "error": "database unreachable"
 }
 ```
 
@@ -331,80 +461,6 @@ func IsNotFoundError(err error) bool {
     return errors.Is(err, sql.ErrNoRows)
 }
 ```
-
----
-
-## Milestone 5: Integration Testing
-
-### Docker Test Setup
-
-**docker-compose.test.yml:**
-```yaml
-services:
-  postgres-test:
-    image: postgres:15-alpine
-    environment:
-      POSTGRES_DB: dime_test
-      POSTGRES_USER: test_user
-      POSTGRES_PASSWORD: test_password
-    ports:
-      - "5433:5432"  # Different from production
-```
-
-### Running Tests
-
-```bash
-# Start test database
-docker-compose -f docker-compose.test.yml up -d
-
-# Run integration tests
-go test -v ./internal/repository/...
-
-# Stop test database
-docker-compose -f docker-compose.test.yml down
-```
-
-### Test Utilities
-
-```go
-// Setup test database with migrations
-func SetupTestDB(t *testing.T) *sql.DB {
-    db, err := sql.Open("pgx", testConnStr)
-    // ...
-    runMigrations(db)
-    return db
-}
-
-// Cleanup between tests
-func CleanupTestDB(t *testing.T, db *sql.DB) {
-    db.Exec("TRUNCATE TABLE transactions, budgets CASCADE")
-}
-
-// Transaction isolation for tests
-func WithTransaction(t *testing.T, db *sql.DB, fn func(*sql.Tx)) {
-    tx, _ := db.Begin()
-    defer tx.Rollback() // Always rollback
-    fn(tx)
-}
-```
-
-### Test Coverage
-
-**Transaction Repository Tests:**
-- Create transaction
-- Get by ID (found/not found)
-- List by user
-- Context timeout handling
-- Transaction methods (CreateTx)
-- Transaction rollback
-
-**Budget Repository Tests:**
-- Create budget
-- Upsert behavior (ON CONFLICT)
-- Get by user/category
-- Add spent amount
-- Transaction methods
-- Transaction rollback
 
 ---
 
@@ -436,9 +492,8 @@ func WithTransaction(t *testing.T, db *sql.DB, fn func(*sql.Tx)) {
 │  ┌────────────────────────┐  ┌──────────────────────────┐  │
 │  │ PostgresTransactionRepo│  │  PostgresBudgetRepo      │  │
 │  │ - Create(ctx, ...)     │  │  - Create(ctx, ...)      │  │
-│  │ - CreateTx(ctx, tx, ...)│  │  - CreateTx(ctx, tx, ...)│  │
-│  │ - GetByID(ctx, ...)    │  │  - AddSpentTx(ctx, ...)  │  │
-│  │ - ListByUser(ctx, ...) │  │  - GetByUserAndCategory()│  │
+│  │ - GetByID(ctx, ...)    │  │  - GetByUserAndCategory()│  │
+│  │ - ListByUser(ctx, ...) │  │  - AddSpent(ctx, ...)    │  │
 │  └──────────┬─────────────┘  └────────────┬───────────────┘  │
 └─────────────┼─────────────────────────────┼──────────────────┘
               │                             │
@@ -451,9 +506,17 @@ func WithTransaction(t *testing.T, db *sql.DB, fn func(*sql.Tx)) {
 │  │              PostgreSQL (pgx driver)                  │  │
 │  │  - Connection Pool (25 max open, 10 max idle)        │  │
 │  │  - Connection Lifetime: 5 min                        │  │
+│  │  - Context Support                                   │  │
 │  │  - Transaction Support                               │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
+```
+
+**Context Flow:**
+```
+HTTP Request Context → Handler Timeout Context → Service → Repository → Database
+        ↓                      ↓                    ↓           ↓           ↓
+   Connection Close        5s Timeout          Propagate   Propagate   Query Cancel
 ```
 
 ---
@@ -463,11 +526,7 @@ func WithTransaction(t *testing.T, db *sql.DB, fn func(*sql.Tx)) {
 ### New Files
 
 1. **`internal/database/transaction.go`** - Transaction manager
-2. **`internal/testutil/db.go`** - Test utilities
-3. **`docker-compose.test.yml`** - Test database configuration
-4. **`internal/repository/postgres_transaction_repo_test.go`** - Transaction tests
-5. **`internal/repository/postgres_budget_repo_test.go`** - Budget tests
-6. **`docs/backend-learning/phase-04-notes.md`** - This documentation
+2. **`internal/repository/interface.go`** - Repository interfaces with context
 
 ### Modified Files
 
@@ -479,32 +538,6 @@ func WithTransaction(t *testing.T, db *sql.DB, fn func(*sql.Tx)) {
    - Added TransactionManager wiring
 
 2. **`go.mod`** - Added pgx dependencies
-
-3. **`internal/repository/interface.go`**
-   - Added `context.Context` to all methods
-
-4. **`internal/repository/postgres_transaction_repo.go`**
-   - Added context support
-   - Added transaction methods (CreateTx, GetByIDTx)
-
-5. **`internal/repository/postgres_budget_repo.go`**
-   - Added context support
-   - Added transaction methods (CreateTx, AddSpentTx, GetByUserAndCategoryTx)
-
-6. **`internal/service/transaction_service.go`**
-   - Added context support
-   - Added RecordTransactionAtomic method
-   - Added TransactionManager dependency
-
-7. **`internal/service/budget_service.go`**
-   - Added context support
-   - Exported Repo field for transaction support
-
-8. **`internal/handler/transaction_handler.go`**
-   - Added context with 5-second timeout
-
-9. **`internal/handler/budget_handler.go`**
-   - Added context with 5-second timeout
 
 ---
 
@@ -523,26 +556,26 @@ Example:
 ```
 
 **When to Adjust:**
-- **Increase** if: High concurrency, low latency requirements
-- **Decrease** if: Memory constraints, many app instances
+- **Increase** if: High concurrency, low latency requirements, low instance count
+- **Decrease** if: Memory constraints, many app instances, database CPU issues
 
 ### Context Timeout Guidelines
 
-| Operation Type | Recommended Timeout |
-|----------------|-------------------|
-| Simple read | 1-3 seconds |
-| Complex query | 5-10 seconds |
-| Transaction | 10-30 seconds |
-| Batch operation | 30-60 seconds |
+| Operation Type | Recommended Timeout | Reason |
+|----------------|---------------------|---------|
+| Simple read | 1-3 seconds | Fast index lookup |
+| Complex query | 5-10 seconds | Joins, aggregations |
+| Transaction | 10-30 seconds | Multiple operations |
+| Batch operation | 30-60 seconds | Large data operations |
 
-### Query Optimization Checklist
+### Query Best Practices
 
-- [ ] Use `QueryRowContext` for single-row results
-- [ ] Use `QueryContext` with proper `rows.Close()`
-- [ ] Use `ExecContext` for INSERT/UPDATE/DELETE
-- [ ] Always pass context for cancellation support
-- [ ] Use transactions for atomic operations
-- [ ] Add appropriate database indexes
+- Use `QueryRowContext` for single-row results
+- Use `QueryContext` with `defer rows.Close()`
+- Use `ExecContext` for INSERT/UPDATE/DELETE
+- Always pass context for cancellation support
+- Use transactions for atomic operations
+- Add appropriate database indexes
 
 ---
 
@@ -570,8 +603,7 @@ defer rows.Close() // Always defer close
 **Problem:**
 ```go
 func (r *Repo) Get(ctx context.Context, id string) (Model, error) {
-    // Ignoring ctx!
-    row := r.db.QueryRow("SELECT ...", id)
+    row := r.db.QueryRow("SELECT ...", id) // Ignoring ctx!
 }
 ```
 
@@ -582,30 +614,7 @@ func (r *Repo) Get(ctx context.Context, id string) (Model, error) {
 }
 ```
 
-### 3. Transaction Rollback Forgotten
-
-**Problem:**
-```go
-tx, _ := db.Begin()
-// Do work...
-if err != nil {
-    return err // Forgot to rollback!
-}
-tx.Commit()
-```
-
-**Solution:**
-```go
-err := txManager.RunInTransaction(ctx, func(tx *sql.Tx) error {
-    // Do work...
-    if err != nil {
-        return err // Automatic rollback
-    }
-    return nil // Automatic commit
-})
-```
-
-### 4. Pool Exhaustion
+### 3. Pool Exhaustion
 
 **Problem:**
 ```
@@ -616,6 +625,7 @@ err := txManager.RunInTransaction(ctx, func(tx *sql.Tx) error {
 - Monitor `WaitCount` and `WaitDuration` metrics
 - Adjust `MaxOpenConns` based on load
 - Check for connection leaks (unclosed rows)
+- Scale horizontally (more app instances with lower MaxOpenConns each)
 
 ---
 
@@ -633,32 +643,26 @@ stats.WaitCount        // Total number of connection waits
 stats.WaitDuration     // Total time waited for connections
 
 // Alert if:
-// - OpenConnections > MaxOpenConns * 0.8
-// - WaitCount is increasing rapidly
-// - WaitDuration > 1 second
+// - OpenConnections > MaxOpenConns * 0.8 (80% capacity)
+// - WaitCount is increasing rapidly (pool exhaustion)
+// - WaitDuration > 1 second (slow connection acquisition)
 ```
 
-### Health Check Response
+### Health Check Monitoring
 
-```json
-{
-  "status": "healthy",
-  "open_connections": 12,
-  "in_use": 3,
-  "idle": 9
-}
-```
+- HTTP 200 with `{"status": "healthy"}` = OK
+- HTTP 503 with `{"status": "unhealthy"}` = Alert
+- No response/timeout = Critical alert
 
 ---
 
-## Next Steps / Future Enhancements
+## Next Steps (Phases 5-7)
 
-1. **Query Logging:** Log slow queries (>1s) for optimization
-2. **Metrics Export:** Expose Prometheus metrics
-3. **Retry Logic:** Automatic retry for transient failures
-4. **Circuit Breaker:** Fail fast when database is down
-5. **Read Replicas:** Route reads to replica databases
-6. **Connection Pool Tuning:** Dynamic adjustment based on load
+Phase 4 establishes the infrastructure. The next phases build upon this:
+
+- **Phase 5**: Implement Transaction Repository (uses context, transaction methods)
+- **Phase 6**: Implement Budget Repository (uses context, transaction methods)
+- **Phase 7**: Integration testing (tests all Phase 4 features with real PostgreSQL)
 
 ---
 
@@ -668,17 +672,23 @@ stats.WaitDuration     // Total time waited for connections
 - [Go database/sql Tutorial](http://go-database-sql.org/)
 - [PostgreSQL Connection Pooling](https://www.postgresql.org/docs/current/runtime-config-connection.html)
 - [Go Context Package](https://pkg.go.dev/context)
+- [log/slog Package](https://pkg.go.dev/log/slog)
 
 ---
 
 ## Conclusion
 
-Phase 4 transforms the basic database connectivity from Phase 3 into a production-ready system with:
+Phase 4 establishes the database infrastructure foundation:
 
 - **Performance:** pgx driver with optimized connection pooling
 - **Reliability:** Context timeouts and cancellation support
 - **Consistency:** Transaction management for atomic operations
 - **Observability:** Structured logging and health checks
-- **Quality:** Comprehensive integration test suite
 
-The application is now ready for production workloads with proper resource management, error handling, and monitoring capabilities.
+This infrastructure enables Phases 5-7 to focus on business logic while inheriting production-ready patterns.
+
+---
+
+*Part of: Backend Learning Project - Phase 4*
+*Prerequisite: Phase 3 (Database Migrations)*
+*Next: Phase 5 (Transaction Repository Implementation)*
