@@ -4,52 +4,40 @@ Quick overview of the PostgreSQL + Go backend learning project.
 
 ---
 
-## Phase Status
+## Roadmap
 
-| Phase | Topic | Status | Documentation |
-|-------|-------|--------|---------------|
-| 1 | PostgreSQL Setup | ✅ Complete | [phase-01-notes.md](phase-01-notes.md) |
-| 2 | Schema Design | ✅ Complete | [phase-02-notes.md](phase-02-notes.md) |
-| 3 | Migrations | ✅ Complete | [phase-03-notes.md](phase-03-notes.md) |
-| 4 | Go Database Integration | ✅ Complete | [phase-04-notes.md](phase-04-notes.md) |
-| 5 | Transaction Repository | ✅ Complete | [phase-05-notes.md](phase-05-notes.md) |
-| 6 | Budget Repository | ✅ Complete | [phase-06-notes.md](phase-06-notes.md) |
-| 7 | Integration Testing | ✅ Complete | [phase-07-notes.md](phase-07-notes.md) |
-| 8 | Configuration & Environment | 🔄 Next | TBD |
+| Phase | Topic | Status | Doc |
+|-------|-------|--------|-----|
+| 1 | PostgreSQL Setup | ✅ Complete | [Notes](phase-01-notes.md) |
+| 2 | Schema Design | ✅ Complete | [Notes](phase-02-notes.md) |
+| 3 | Migrations | ✅ Complete | [Notes](phase-03-notes.md) |
+| 4 | Go Database Integration | ✅ Complete | [Notes](phase-04-notes.md) |
+| 5 | Transaction Repository | ✅ Complete | [Notes](phase-05-notes.md) |
+| 6 | Budget Repository | ✅ Complete | [Notes](phase-06-notes.md) |
+| 7 | Integration Testing | ✅ Complete | [Notes](phase-07-notes.md) |
+| 8 | Configuration & Environment | 🔄 **CURRENT** | - |
+| 9 | Pagination & Performance | ⏳ Pending | - |
+| 10 | Production Hardening | ⏳ Pending | - |
 
----
-
-## Current Phase
-
-**Phase 8: Configuration & Environment**  
-Goal: Production-ready configuration patterns
-
-See the individual phase files above for detailed documentation on each topic.
+**Next:** Phase 8 - Configuration & Environment
 
 ---
 
-## Quick Reference
+## Current Phase: 8
 
-### Project Structure
-```
-cmd/api/main.go                    # Entry point
-internal/
-  repository/                      # Data access layer
-    postgres_transaction_repo.go   # Transaction repository
-    postgres_budget_repo.go        # Budget repository
-  service/                         # Business logic
-  handler/                         # HTTP handlers
-  database/                        # Transaction manager
-docs/backend-learning/             # Documentation
-  phase-0*.md                      # Phase-specific notes
-```
+**Goal:** Production-ready configuration patterns
 
-### Running the Application
+**Status:** Not Started
+
+---
+
+## Quick Commands
+
 ```powershell
 # Start PostgreSQL
 docker-compose up -d
 
-# Run the app
+# Run app
 go run ./cmd/api
 
 # Run tests
@@ -58,4 +46,4 @@ go test -short ./...
 
 ---
 
-*Last Updated: Phases 1-7 Complete*
+*Last Updated: Phases 1-7 Complete, Phase 8 Next*
