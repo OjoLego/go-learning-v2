@@ -16,3 +16,8 @@ bin/
 
 # macOS
 .DS_Store
+
+# Environment variables (contains secrets)
+.env
+.env.local
+.env.*.local

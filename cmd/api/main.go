@@ -7,9 +7,9 @@ import (
 	"log"
 	"log/slog"
 	"net/http"
-	"os"
 	"time"
 
+	"dime-api/internal/config"
 	"dime-api/internal/database"
 	"dime-api/internal/handler"
 	"dime-api/internal/repository"
@@ -23,18 +23,29 @@ import (
 )
 
 func main() {
-	// Initialize structured logging
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
-	slog.SetDefault(logger)
-	slog.Info("Starting dime-api server", slog.String("version", "1.0.0"))
-
-	// Connect to PostgreSQL database
-	db, err := connectDB()
+	// Load configuration
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Invalid configuration: %v", err)
+	}
+
+	slog.Info("Starting dime-api server",
+		slog.String("version", "1.0.0"),
+		slog.String("environment", cfg.Environment),
+	)
+
+	// Connect to PostgreSQL database using config
+	db, err := connectDB(cfg)
+	if err != nil {
+		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
-	log.Println("Connected to PostgreSQL")
+	slog.Info("Connected to PostgreSQL")
 
 	// Check migration status before running
 	version, dirty, err := checkMigrationStatus(db)
@@ -95,37 +106,30 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", handlerWithMiddleware))
 }
 
-// connectDB establishes connection to PostgreSQL with production-ready pool configuration
-func connectDB() (*sql.DB, error) {
-	// Get connection details from environment or use defaults
-	host := getEnv("DB_HOST", "localhost")
-	port := getEnv("DB_PORT", "5432")
-	user := getEnv("DB_USER", "dime_user")
-	password := getEnv("DB_PASSWORD", "dime_password")
-	dbname := getEnv("DB_NAME", "dime")
+// connectDB establishes connection to PostgreSQL using configuration
+func connectDB(cfg *config.Config) (*sql.DB, error) {
+	// Use the connection string from config
+	connStr := cfg.DatabaseConnectionString()
 
-	// pgx connection string format (DSN style)
-	connStr := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-
-	// Use pgx driver instead of postgres (lib/pq)
+	// Use pgx driver
 	db, err := sql.Open("pgx", connStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
-	// Verify connection
-	if err := db.Ping(); err != nil {
+	// Verify connection with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := db.PingContext(ctx); err != nil {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// Configure connection pool for production
-	// These settings are based on PostgreSQL max_connections = 100
-	// Assuming 4 app instances: 100/4 = 25 max connections per instance
-	db.SetMaxOpenConns(25)                  // Maximum number of open connections
-	db.SetMaxIdleConns(10)                  // Keep 10 connections warm for quick response
-	db.SetConnMaxLifetime(5 * time.Minute)  // Recycle connections after 5 minutes
-	db.SetConnMaxIdleTime(1 * time.Minute)  // Close idle connections after 1 minute
+	// Configure connection pool using values from config
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(10)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(1 * time.Minute)
 
 	slog.Info("Database connection pool configured",
 		slog.Int("max_open_conns", 25),
@@ -226,14 +230,6 @@ func healthCheck(db *sql.DB) http.HandlerFunc {
 		fmt.Fprintf(w, `{"status":"healthy","open_connections":%d,"in_use":%d,"idle":%d}`,
 			stats.OpenConnections, stats.InUse, stats.Idle)
 	}
-}
-
-// getEnv retrieves environment variable or returns default
-func getEnv(key, defaultValue string) string {
-	if value := os.Getenv(key); value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // loggingMiddleware wraps a handler with request timing
