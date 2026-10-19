@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"dime-api/internal/model"
@@ -70,6 +71,30 @@ func (h *TransactionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, t)
 }
 
+// parsePagination extracts and validates pagination parameters from URL
+// Example: ?page=2&page_size=10 → page=2, pageSize=10
+func parsePagination(r *http.Request) model.PaginationRequest {
+	// Parse page parameter (default: 1)
+	pageStr := r.URL.Query().Get("page")
+	page, err := strconv.Atoi(pageStr)
+	if err != nil || page < 1 {
+		page = 1
+	}
+
+	// Parse page_size parameter (default: 20)
+	pageSizeStr := r.URL.Query().Get("page_size")
+	pageSize, err := strconv.Atoi(pageSizeStr)
+	if err != nil || pageSize < 1 {
+		pageSize = model.DefaultPageSize
+	}
+	// Enforce maximum page size to prevent abuse
+	if pageSize > model.MaxPageSize {
+		pageSize = model.MaxPageSize
+	}
+
+	return model.NewPaginationRequest(page, pageSize)
+}
+
 func (h *TransactionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
@@ -77,17 +102,35 @@ func (h *TransactionHandler) ListByUser(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Parse pagination parameters from URL
+	pagination := parsePagination(r)
+
+
 	// Create a context with timeout for the database operation
 	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
 	defer cancel()
 
-	txns, err := h.service.GetUserTransactions(ctx, userID)
+	// Get paginated transactions
+	transactions, totalCount, err := h.service.GetUserTransactionsPaginated(
+		ctx,
+		userID,
+		pagination.Page,
+		pagination.PageSize,
+	)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, txns)
+	// Build paginated response with metadata
+	response := model.NewPaginatedResponse(
+		transactions,
+		pagination.Page,
+		pagination.PageSize,
+		totalCount,
+	)
+
+	respondJSON(w, http.StatusOK, response)
 }
 
 // --- small helpers, shared across all handlers in this package ---

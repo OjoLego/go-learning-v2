@@ -25,4 +25,13 @@ type TransactionRepository interface {
 	Create(ctx context.Context, t model.Transaction) (model.Transaction, error)
 	GetByID(ctx context.Context, id string) (model.Transaction, error)
 	ListByUser(ctx context.Context, userID string) ([]model.Transaction, error)
+
+	// NEW: Paginated version
+	// Returns: transactions, total count, error
+	ListByUserPaginated(
+		ctx context.Context, 
+		userID string, 
+		offset, limit int,
+	) ([]model.Transaction, int, error)
+
 }

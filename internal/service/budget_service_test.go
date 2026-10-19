@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"testing"
 
 	"dime-api/internal/model"
@@ -18,13 +19,13 @@ func newMockBudgetRepo() *mockBudgetRepo {
 	}
 }
 
-func (m *mockBudgetRepo) Create(b model.Budget) (model.Budget, error) {
+func (m *mockBudgetRepo) Create(ctx context.Context, b model.Budget) (model.Budget, error) {
 	key := b.UserID + "|" + b.Category
 	m.budgets[key] = b
 	return b, nil
 }
 
-func (m *mockBudgetRepo) GetByUserAndCategory(userID, category string) (model.Budget, error) {
+func (m *mockBudgetRepo) GetByUserAndCategory(ctx context.Context, userID, category string) (model.Budget, error) {
 	key := userID + "|" + category
 	b, ok := m.budgets[key]
 	if !ok {
@@ -33,7 +34,7 @@ func (m *mockBudgetRepo) GetByUserAndCategory(userID, category string) (model.Bu
 	return b, nil
 }
 
-func (m *mockBudgetRepo) AddSpent(userID, category string, amount float64) (model.Budget, error) {
+func (m *mockBudgetRepo) AddSpent(ctx context.Context, userID, category string, amount float64) (model.Budget, error) {
 	key := userID + "|" + category
 	b, ok := m.budgets[key]
 	if !ok {
@@ -48,13 +49,14 @@ func TestCheckBudgetStatus(t *testing.T) {
 	// Create mock repository and service
 	repo := newMockBudgetRepo()
 	svc := NewBudgetService(repo)
+	ctx := context.Background()
 
 	// Setup: Create budgets with different spent amounts
-	repo.Create(model.Budget{UserID: "user1", Category: "food", Limit: 100, Spent: 50})   // 50% spent
-	repo.Create(model.Budget{UserID: "user1", Category: "rent", Limit: 100, Spent: 85})   // 85% spent - near limit
-	repo.Create(model.Budget{UserID: "user1", Category: "fun", Limit: 100, Spent: 100})   // 100% spent - over budget
-	repo.Create(model.Budget{UserID: "user1", Category: "bad", Limit: 100, Spent: 150})   // 150% spent - over budget
-	repo.Create(model.Budget{UserID: "user1", Category: "zero", Limit: 0, Spent: 10})     // Zero limit - error case
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "food", Limit: 100, Spent: 50})   // 50% spent
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "rent", Limit: 100, Spent: 85})   // 85% spent - near limit
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "fun", Limit: 100, Spent: 100})   // 100% spent - over budget
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "bad", Limit: 100, Spent: 150})   // 150% spent - over budget
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "zero", Limit: 0, Spent: 10})     // Zero limit - error case
 
 	// Table-driven tests
 	tests := []struct {
@@ -74,7 +76,7 @@ func TestCheckBudgetStatus(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.CheckBudgetStatus(tt.userID, tt.category)
+			got, err := svc.CheckBudgetStatus(ctx, tt.userID, tt.category)
 
 			// Check error expectation
 			if (err != nil) != tt.wantErr {

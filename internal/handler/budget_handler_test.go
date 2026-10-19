@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -22,13 +23,13 @@ func newMockBudgetRepoForHandler() *mockBudgetRepoForHandler {
 	}
 }
 
-func (m *mockBudgetRepoForHandler) Create(b model.Budget) (model.Budget, error) {
+func (m *mockBudgetRepoForHandler) Create(ctx context.Context, b model.Budget) (model.Budget, error) {
 	key := b.UserID + "|" + b.Category
 	m.data[key] = b
 	return b, nil
 }
 
-func (m *mockBudgetRepoForHandler) GetByUserAndCategory(userID, category string) (model.Budget, error) {
+func (m *mockBudgetRepoForHandler) GetByUserAndCategory(ctx context.Context, userID, category string) (model.Budget, error) {
 	key := userID + "|" + category
 	b, ok := m.data[key]
 	if !ok {
@@ -37,7 +38,7 @@ func (m *mockBudgetRepoForHandler) GetByUserAndCategory(userID, category string)
 	return b, nil
 }
 
-func (m *mockBudgetRepoForHandler) AddSpent(userID, category string, amount float64) (model.Budget, error) {
+func (m *mockBudgetRepoForHandler) AddSpent(ctx context.Context, userID, category string, amount float64) (model.Budget, error) {
 	key := userID + "|" + category
 	b, ok := m.data[key]
 	if !ok {
@@ -57,9 +58,10 @@ func setupTestHandler() (*BudgetHandler, *mockBudgetRepoForHandler) {
 
 func TestBudgetHandler_Status(t *testing.T) {
 	handler, repo := setupTestHandler()
+	ctx := context.Background()
 
 	// Setup test data
-	repo.Create(model.Budget{UserID: "user1", Category: "food", Limit: 100, Spent: 50})
+	repo.Create(ctx, model.Budget{UserID: "user1", Category: "food", Limit: 100, Spent: 50})
 
 	tests := []struct {
 		name           string

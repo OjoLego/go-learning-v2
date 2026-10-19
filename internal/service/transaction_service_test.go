@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
+	"dime-api/internal/database"
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 )
@@ -19,12 +21,12 @@ func newMockTransactionRepo() *mockTransactionRepo {
 	}
 }
 
-func (m *mockTransactionRepo) Create(t model.Transaction) (model.Transaction, error) {
+func (m *mockTransactionRepo) Create(ctx context.Context, t model.Transaction) (model.Transaction, error) {
 	m.data[t.ID] = t
 	return t, nil
 }
 
-func (m *mockTransactionRepo) GetByID(id string) (model.Transaction, error) {
+func (m *mockTransactionRepo) GetByID(ctx context.Context, id string) (model.Transaction, error) {
 	t, ok := m.data[id]
 	if !ok {
 		return model.Transaction{}, repository.ErrNotFound
@@ -32,7 +34,7 @@ func (m *mockTransactionRepo) GetByID(id string) (model.Transaction, error) {
 	return t, nil
 }
 
-func (m *mockTransactionRepo) ListByUser(userID string) ([]model.Transaction, error) {
+func (m *mockTransactionRepo) ListByUser(ctx context.Context, userID string) ([]model.Transaction, error) {
 	var results []model.Transaction
 	for _, t := range m.data {
 		if t.UserID == userID {
@@ -42,16 +44,35 @@ func (m *mockTransactionRepo) ListByUser(userID string) ([]model.Transaction, er
 	return results, nil
 }
 
+func (m *mockTransactionRepo) ListByUserPaginated(ctx context.Context, userID string, offset, limit int) ([]model.Transaction, int, error) {
+	all, _ := m.ListByUser(ctx, userID)
+	totalCount := len(all)
+	
+	start := offset
+	end := offset + limit
+	if start > totalCount {
+		start = totalCount
+	}
+	if end > totalCount {
+		end = totalCount
+	}
+	
+	return all[start:end], totalCount, nil
+}
+
 func setupTransactionService() (*TransactionService, *mockTransactionRepo) {
 	repo := newMockTransactionRepo()
 	// For these tests, we don't need budget service functionality
 	// so we pass nil (the code handles this gracefully in checkBudgetAfterExpense)
-	svc := NewTransactionService(repo, nil)
+	// Also pass nil for transaction manager since we're not testing atomic transactions
+	txManager := database.NewTransactionManager(nil)
+	svc := NewTransactionService(repo, nil, txManager)
 	return svc, repo
 }
 
 func TestRecordTransaction_Validation(t *testing.T) {
 	svc, _ := setupTransactionService()
+	ctx := context.Background()
 
 	tests := []struct {
 		name      string
@@ -109,7 +130,7 @@ func TestRecordTransaction_Validation(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.RecordTransaction(tt.userID, tt.txType, tt.amount, tt.category)
+			got, err := svc.RecordTransaction(ctx, tt.userID, tt.txType, tt.amount, tt.category)
 
 			// Check error expectation
 			if (err != nil) != tt.wantErr {
@@ -155,15 +176,16 @@ func TestRecordTransaction_Validation(t *testing.T) {
 
 func TestRecordTransaction_SuccessFields(t *testing.T) {
 	svc, repo := setupTransactionService()
+	ctx := context.Background()
 
 	// Record a transaction
-	tx, err := svc.RecordTransaction("user123", model.TypeExpense, 75.50, "dining")
+	tx, err := svc.RecordTransaction(ctx, "user123", model.TypeExpense, 75.50, "dining")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	// Verify it was saved to the repository
-	saved, err := repo.GetByID(tx.ID)
+	saved, err := repo.GetByID(ctx, tx.ID)
 	if err != nil {
 		t.Fatalf("failed to retrieve saved transaction: %v", err)
 	}
@@ -188,9 +210,10 @@ func TestRecordTransaction_SuccessFields(t *testing.T) {
 
 func TestGetTransaction(t *testing.T) {
 	svc, _ := setupTransactionService()
+	ctx := context.Background()
 
 	// First, record a transaction
-	tx, err := svc.RecordTransaction("user1", model.TypeIncome, 500.00, "freelance")
+	tx, err := svc.RecordTransaction(ctx, "user1", model.TypeIncome, 500.00, "freelance")
 	if err != nil {
 		t.Fatalf("failed to create transaction: %v", err)
 	}
@@ -219,7 +242,7 @@ func TestGetTransaction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.GetTransaction(tt.id)
+			got, err := svc.GetTransaction(ctx, tt.id)
 
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetTransaction() error = %v, wantErr %v", err, tt.wantErr)

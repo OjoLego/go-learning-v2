@@ -162,3 +162,16 @@ func (s *TransactionService) RecordTransactionAtomic(
 
 	return saved, nil
 }
+
+// GetUserTransactionsPaginated returns paginated transactions for a user
+func (s *TransactionService) GetUserTransactionsPaginated(
+	ctx context.Context,
+	userID string,
+	page, pageSize int,
+) ([]model.Transaction, int, error) {
+	// Calculate offset
+	offset := (page - 1) * pageSize
+	
+	// Call paginated repository method
+	return s.repo.ListByUserPaginated(ctx, userID, offset, pageSize)
+}

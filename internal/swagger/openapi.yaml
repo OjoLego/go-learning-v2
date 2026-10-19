@@ -37,24 +37,42 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
     get:
-      summary: List a user's transactions
+      summary: List a user's transactions (paginated)
       operationId: listTransactionsByUser
       parameters:
         - name: user_id
           in: query
           required: true
+          description: The user's unique identifier
           schema:
             type: string
           example: u1
+        - name: page
+          in: query
+          required: false
+          description: Page number (1-based, default 1)
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          example: 1
+        - name: page_size
+          in: query
+          required: false
+          description: Number of items per page (default 20, max 100)
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+          example: 10
       responses:
         '200':
-          description: Transactions for the requested user
+          description: Paginated list of transactions for the requested user
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Transaction'
+                $ref: '#/components/schemas/PaginatedResponse'
         '400':
           description: Missing user_id query parameter
           content:
@@ -237,6 +255,58 @@ components:
             - within budget
             - near limit
             - over budget
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          description: List of transactions for the current page
+          items:
+            $ref: '#/components/schemas/Transaction'
+        page:
+          type: integer
+          description: Current page number (1-based)
+          example: 1
+        page_size:
+          type: integer
+          description: Number of items per page
+          example: 20
+        total_count:
+          type: integer
+          description: Total number of transactions for this user
+          example: 150
+        total_pages:
+          type: integer
+          description: Total number of pages available
+          example: 8
+        has_next:
+          type: boolean
+          description: Whether there is a next page
+          example: true
+        has_prev:
+          type: boolean
+          description: Whether there is a previous page
+          example: false
+      example:
+        data:
+          - id: "abc123def456"
+            user_id: "u1"
+            type: "expense"
+            amount: 50.00
+            category: "food"
+            created_at: "2024-01-15T10:30:00Z"
+          - id: "def789ghi012"
+            user_id: "u1"
+            type: "expense"
+            amount: 25.50
+            category: "transport"
+            created_at: "2024-01-14T15:20:00Z"
+        page: 1
+        page_size: 20
+        total_count: 150
+        total_pages: 8
+        has_next: true
+        has_prev: false
     ErrorResponse:
       type: object
       properties:

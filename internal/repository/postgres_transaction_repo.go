@@ -161,3 +161,66 @@ func (r *PostgresTransactionRepo) GetByIDTx(ctx context.Context, tx *sql.Tx, id 
 
 	return t, nil
 }
+
+// ListByUserPaginated retrieves transactions with pagination
+// Returns: transactions, total count, error
+func (r *PostgresTransactionRepo) ListByUserPaginated(
+	ctx context.Context,
+	userID string,
+	offset, limit int,
+) ([]model.Transaction, int, error) {
+	// First, get total count (for metadata)
+	countQuery := `
+		SELECT COUNT(*) 
+		FROM transactions 
+		WHERE user_id = $1
+	`
+	var totalCount int
+	err := r.db.QueryRowContext(ctx, countQuery, userID).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to count transactions: %w", err)
+	}
+
+	// If no transactions, return early
+	if totalCount == 0 {
+		return []model.Transaction{}, 0, nil
+	}
+
+	// Now get the paginated data
+	dataQuery := `
+		SELECT id, user_id, type, amount, category, created_at
+		FROM transactions
+		WHERE user_id = $1
+		ORDER BY created_at DESC
+		LIMIT $2 OFFSET $3
+	`
+
+	rows, err := r.db.QueryContext(ctx, dataQuery, userID, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to list transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var transactions []model.Transaction
+	for rows.Next() {
+		var t model.Transaction
+		err := rows.Scan(
+			&t.ID,
+			&t.UserID,
+			&t.Type,
+			&t.Amount,
+			&t.Category,
+			&t.CreatedAt,
+		)
+		if err != nil {
+			return nil, 0, fmt.Errorf("failed to scan transaction: %w", err)
+		}
+		transactions = append(transactions, t)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("error iterating transactions: %w", err)
+	}
+
+	return transactions, totalCount, nil
+}

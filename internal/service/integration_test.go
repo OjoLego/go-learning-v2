@@ -1,9 +1,11 @@
 package service
 
 import (
+	"context"
 	"testing"
 	"time"
 
+	"dime-api/internal/database"
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 )
@@ -21,15 +23,19 @@ import (
 // - Integration tests: Verify components work together (like this one)
 // - Unit tests: Test single component in isolation (like our earlier tests)
 func TestFullBudgetWorkflow(t *testing.T) {
+	ctx := context.Background()
+	
 	// Setup: Create real repositories and services
 	// We're using the actual implementations, not mocks!
-	budgetRepo := repository.NewInMemoryBudgetRepo()
+	budgetRepo := repository.NewMemoryBudgetRepo()
 	budgetSvc := NewBudgetService(budgetRepo)
 
-	// TransactionService needs both transaction repo AND budget service
+	// TransactionService needs transaction repo, budget service, AND transaction manager
 	// This is the key integration point!
-	transactionRepo := repository.NewInMemoryTransactionRepo()
-	transactionSvc := NewTransactionService(transactionRepo, budgetSvc)
+	transactionRepo := repository.NewMemoryTransactionRepo()
+	// Create a mock transaction manager (we don't have a real DB for in-memory tests)
+	txManager := database.NewTransactionManager(nil)
+	transactionSvc := NewTransactionService(transactionRepo, budgetSvc, txManager)
 
 	// Test scenario: User sets a budget, makes purchases, checks status
 	userID := "user123"
@@ -45,7 +51,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 			Spent:    0,
 		}
 
-		created, err := budgetSvc.CreateBudget(budget)
+		created, err := budgetSvc.CreateBudget(ctx, budget)
 		if err != nil {
 			t.Fatalf("failed to create budget: %v", err)
 		}
@@ -58,7 +64,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 	// Step 2: Record a $60 expense
 	// This should update the budget's spent amount in the background (async goroutine)
 	t.Run("record first expense", func(t *testing.T) {
-		tx, err := transactionSvc.RecordTransaction(userID, model.TypeExpense, 60.0, category)
+		tx, err := transactionSvc.RecordTransaction(ctx, userID, model.TypeExpense, 60.0, category)
 		if err != nil {
 			t.Fatalf("failed to record transaction: %v", err)
 		}
@@ -77,7 +83,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 
 	// Step 3: Check budget status (should be "within budget" - 60% spent)
 	t.Run("check status after first expense", func(t *testing.T) {
-		status, err := budgetSvc.CheckBudgetStatus(userID, category)
+		status, err := budgetSvc.CheckBudgetStatus(ctx, userID, category)
 		if err != nil {
 			t.Fatalf("failed to check budget status: %v", err)
 		}
@@ -90,7 +96,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 
 	// Step 4: Record another $30 expense (total spent: $90)
 	t.Run("record second expense", func(t *testing.T) {
-		tx, err := transactionSvc.RecordTransaction(userID, model.TypeExpense, 30.0, category)
+		tx, err := transactionSvc.RecordTransaction(ctx, userID, model.TypeExpense, 30.0, category)
 		if err != nil {
 			t.Fatalf("failed to record transaction: %v", err)
 		}
@@ -105,7 +111,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 
 	// Step 5: Check budget status (should be "near limit" - 90% spent)
 	t.Run("check status after second expense", func(t *testing.T) {
-		status, err := budgetSvc.CheckBudgetStatus(userID, category)
+		status, err := budgetSvc.CheckBudgetStatus(ctx, userID, category)
 		if err != nil {
 			t.Fatalf("failed to check budget status: %v", err)
 		}
@@ -118,7 +124,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 
 	// Step 6: Record final $15 expense (total spent: $105, over budget!)
 	t.Run("record third expense that exceeds budget", func(t *testing.T) {
-		tx, err := transactionSvc.RecordTransaction(userID, model.TypeExpense, 15.0, category)
+		tx, err := transactionSvc.RecordTransaction(ctx, userID, model.TypeExpense, 15.0, category)
 		if err != nil {
 			t.Fatalf("failed to record transaction: %v", err)
 		}
@@ -133,7 +139,7 @@ func TestFullBudgetWorkflow(t *testing.T) {
 
 	// Step 7: Check budget status (should be "over budget" - 105% spent)
 	t.Run("check status after going over budget", func(t *testing.T) {
-		status, err := budgetSvc.CheckBudgetStatus(userID, category)
+		status, err := budgetSvc.CheckBudgetStatus(ctx, userID, category)
 		if err != nil {
 			t.Fatalf("failed to check budget status: %v", err)
 		}
@@ -148,11 +154,14 @@ func TestFullBudgetWorkflow(t *testing.T) {
 // TestIncomeDoesNotAffectBudget verifies that income transactions
 // do NOT update the budget spent amount.
 func TestIncomeDoesNotAffectBudget(t *testing.T) {
+	ctx := context.Background()
+	
 	// Setup
-	budgetRepo := repository.NewInMemoryBudgetRepo()
+	budgetRepo := repository.NewMemoryBudgetRepo()
 	budgetSvc := NewBudgetService(budgetRepo)
-	transactionRepo := repository.NewInMemoryTransactionRepo()
-	transactionSvc := NewTransactionService(transactionRepo, budgetSvc)
+	transactionRepo := repository.NewMemoryTransactionRepo()
+	txManager := database.NewTransactionManager(nil)
+	transactionSvc := NewTransactionService(transactionRepo, budgetSvc, txManager)
 
 	userID := "user456"
 	category := "salary"
@@ -165,17 +174,17 @@ func TestIncomeDoesNotAffectBudget(t *testing.T) {
 		Limit:    1000.0,
 		Spent:    0,
 	}
-	budgetSvc.CreateBudget(budget)
+	budgetSvc.CreateBudget(ctx, budget)
 
 	// Record an income transaction
-	_, err := transactionSvc.RecordTransaction(userID, model.TypeIncome, 5000.0, category)
+	_, err := transactionSvc.RecordTransaction(ctx, userID, model.TypeIncome, 5000.0, category)
 	if err != nil {
 		t.Fatalf("failed to record income: %v", err)
 	}
 
 	// Check budget - should still be "within budget" (0% spent)
 	// because income doesn't count against the budget
-	status, err := budgetSvc.CheckBudgetStatus(userID, category)
+	status, err := budgetSvc.CheckBudgetStatus(ctx, userID, category)
 	if err != nil {
 		t.Fatalf("failed to check budget status: %v", err)
 	}
@@ -185,7 +194,7 @@ func TestIncomeDoesNotAffectBudget(t *testing.T) {
 	}
 
 	// Verify spent is still 0 by checking the budget directly
-	b, _ := budgetRepo.GetByUserAndCategory(userID, category)
+	b, _ := budgetRepo.GetByUserAndCategory(ctx, userID, category)
 	if b.Spent != 0 {
 		t.Errorf("income incorrectly updated budget spent; expected 0, got %.2f", b.Spent)
 	}
@@ -194,16 +203,19 @@ func TestIncomeDoesNotAffectBudget(t *testing.T) {
 // TestMultipleCategoriesIndependent verifies that budgets for different
 // categories are tracked independently.
 func TestMultipleCategoriesIndependent(t *testing.T) {
+	ctx := context.Background()
+	
 	// Setup
-	budgetRepo := repository.NewInMemoryBudgetRepo()
+	budgetRepo := repository.NewMemoryBudgetRepo()
 	budgetSvc := NewBudgetService(budgetRepo)
-	transactionRepo := repository.NewInMemoryTransactionRepo()
-	transactionSvc := NewTransactionService(transactionRepo, budgetSvc)
+	transactionRepo := repository.NewMemoryTransactionRepo()
+	txManager := database.NewTransactionManager(nil)
+	transactionSvc := NewTransactionService(transactionRepo, budgetSvc, txManager)
 
 	userID := "user789"
 
 	// Create two budgets for different categories
-	budgetSvc.CreateBudget(model.Budget{
+	budgetSvc.CreateBudget(ctx, model.Budget{
 		ID:       "budget-food",
 		UserID:   userID,
 		Category: "food",
@@ -211,7 +223,7 @@ func TestMultipleCategoriesIndependent(t *testing.T) {
 		Spent:    0,
 	})
 
-	budgetSvc.CreateBudget(model.Budget{
+	budgetSvc.CreateBudget(ctx, model.Budget{
 		ID:       "budget-entertainment",
 		UserID:   userID,
 		Category: "entertainment",
@@ -220,26 +232,26 @@ func TestMultipleCategoriesIndependent(t *testing.T) {
 	})
 
 	// Spend on food only
-	transactionSvc.RecordTransaction(userID, model.TypeExpense, 150.0, "food")
+	transactionSvc.RecordTransaction(ctx, userID, model.TypeExpense, 150.0, "food")
 
 	// Wait for async goroutine to update budget
 	time.Sleep(50 * time.Millisecond)
 
 	// Check food budget (should be 75% - within budget)
-	foodStatus, _ := budgetSvc.CheckBudgetStatus(userID, "food")
+	foodStatus, _ := budgetSvc.CheckBudgetStatus(ctx, userID, "food")
 	if foodStatus != "within budget" {
 		t.Errorf("food budget should be 'within budget', got %q", foodStatus)
 	}
 
 	// Check entertainment budget (should still be 0% - within budget)
-	entStatus, _ := budgetSvc.CheckBudgetStatus(userID, "entertainment")
+	entStatus, _ := budgetSvc.CheckBudgetStatus(ctx, userID, "entertainment")
 	if entStatus != "within budget" {
 		t.Errorf("entertainment budget should be 'within budget', got %q", entStatus)
 	}
 
 	// Verify the actual spent amounts
-	foodBudget, _ := budgetRepo.GetByUserAndCategory(userID, "food")
-	entBudget, _ := budgetRepo.GetByUserAndCategory(userID, "entertainment")
+	foodBudget, _ := budgetRepo.GetByUserAndCategory(ctx, userID, "food")
+	entBudget, _ := budgetRepo.GetByUserAndCategory(ctx, userID, "entertainment")
 
 	if foodBudget.Spent != 150.0 {
 		t.Errorf("food spent should be 150.0, got %.2f", foodBudget.Spent)
@@ -252,23 +264,26 @@ func TestMultipleCategoriesIndependent(t *testing.T) {
 // TestBudgetNotFoundScenario verifies behavior when no budget exists
 // for a given category.
 func TestBudgetNotFoundScenario(t *testing.T) {
+	ctx := context.Background()
+	
 	// Setup
-	budgetRepo := repository.NewInMemoryBudgetRepo()
+	budgetRepo := repository.NewMemoryBudgetRepo()
 	budgetSvc := NewBudgetService(budgetRepo)
-	transactionRepo := repository.NewInMemoryTransactionRepo()
-	transactionSvc := NewTransactionService(transactionRepo, budgetSvc)
+	transactionRepo := repository.NewMemoryTransactionRepo()
+	txManager := database.NewTransactionManager(nil)
+	transactionSvc := NewTransactionService(transactionRepo, budgetSvc, txManager)
 
 	userID := "user999"
 
 	// Don't create a budget - just record an expense
 	// This should NOT fail - the expense is recorded, but budget check is skipped
-	_, err := transactionSvc.RecordTransaction(userID, model.TypeExpense, 50.0, "nonexistent-category")
+	_, err := transactionSvc.RecordTransaction(ctx, userID, model.TypeExpense, 50.0, "nonexistent-category")
 	if err != nil {
 		t.Fatalf("recording expense without budget should not fail: %v", err)
 	}
 
 	// But checking budget status should fail
-	_, err = budgetSvc.CheckBudgetStatus(userID, "nonexistent-category")
+	_, err = budgetSvc.CheckBudgetStatus(ctx, userID, "nonexistent-category")
 	if err == nil {
 		t.Error("expected error when checking status of non-existent budget")
 	}
