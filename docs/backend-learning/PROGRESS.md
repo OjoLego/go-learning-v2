@@ -16,16 +16,16 @@ Quick overview of the PostgreSQL + Go backend learning project.
 | 6     | Budget Repository           | ✅ Complete    | [Notes](phase-06-notes.md) |
 | 7     | Integration Testing         | ✅ Complete    | [Notes](phase-07-notes.md) |
 | 8     | Configuration & Environment | ✅ Complete    | [Notes](phase-08-notes.md) |
-| 9     | Pagination & Performance    | 🔄 **CURRENT** | -                          |
-| 10    | Production Hardening        | ⏳ Pending     | -                          |
+| 9     | Pagination & Performance    | ✅ Complete    | [Notes](phase-09-notes.md) |
+| 10    | Production Hardening        | 🔄 **CURRENT** | -                          |
 
-**Next:** Phase 9 - Pagination & Performance
+**Next:** Phase 10 - Production Hardening
 
 ---
 
-## Current Phase: 9
+## Current Phase: 10
 
-**Goal:** Implement pagination and optimize performance
+**Goal:** Harden the application for production use
 
 **Status:** Not Started
 
