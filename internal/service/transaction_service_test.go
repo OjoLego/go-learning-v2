@@ -106,7 +106,7 @@ func TestRecordTransaction_Validation(t *testing.T) {
 			amount:   0,
 			category: "food",
 			wantErr:  true,
-			errMsg:   "amount must be positive",
+			errMsg:   "amount must be greater than zero",
 		},
 		{
 			name:     "invalid: negative amount",
@@ -115,7 +115,7 @@ func TestRecordTransaction_Validation(t *testing.T) {
 			amount:   -10.00,
 			category: "food",
 			wantErr:  true,
-			errMsg:   "amount must be positive",
+			errMsg:   "amount must be greater than zero",
 		},
 		{
 			name:     "invalid: large negative amount",
@@ -124,7 +124,7 @@ func TestRecordTransaction_Validation(t *testing.T) {
 			amount:   -9999.99,
 			category: "refund",
 			wantErr:  true,
-			errMsg:   "amount must be positive",
+			errMsg:   "amount must be greater than zero",
 		},
 	}
 

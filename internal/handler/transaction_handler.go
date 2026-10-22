@@ -3,14 +3,15 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"strconv"
 	"time"
 
+	"dime-api/internal/middleware"
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 	"dime-api/internal/service"
+	"dime-api/internal/validator"
 )
 
 // dbTimeout is the maximum duration for database operations
@@ -25,16 +26,37 @@ func NewTransactionHandler(s *service.TransactionService) *TransactionHandler {
 }
 
 type createTransactionRequest struct {
-	UserID   string  `json:"user_id"`
-	Type     string  `json:"type"`
-	Amount   float64 `json:"amount"`
-	Category string  `json:"category"`
+	UserID   string  `json:"user_id" validate:"required"`
+	Type     string  `json:"type" validate:"required,oneof=income expense"`
+	Amount   float64 `json:"amount" validate:"required,gt=0"`
+	Category string  `json:"category" validate:"required,min=1,max=50"`
 }
 
 func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req createTransactionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid request body")
+		RespondError(w, r, err)
+		return
+	}
+
+	// Validate
+	if fieldErrors := validator.ValidateStruct(req); fieldErrors != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"error": map[string]any{
+				"code":    "VALIDATION_ERROR",
+				"message": "request validation failed",
+				"fields":  fieldErrors,
+			},
+		})
+		return
+	}
+
+	// Authorize
+	authUserID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || authUserID != req.UserID {
+		RespondError(w, r, ErrForbidden)
 		return
 	}
 
@@ -44,7 +66,7 @@ func (h *TransactionHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.service.RecordTransaction(ctx, req.UserID, model.TransactionType(req.Type), req.Amount, req.Category)
 	if err != nil {
-		respondError(w, http.StatusBadRequest, err.Error())
+		RespondError(w, r, err)
 		return
 	}
 
@@ -60,11 +82,7 @@ func (h *TransactionHandler) GetByID(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.service.GetTransaction(ctx, id)
 	if err != nil {
-		if errors.Is(err, repository.ErrNotFound) {
-			respondError(w, http.StatusNotFound, "transaction not found")
-			return
-		}
-		respondError(w, http.StatusInternalServerError, "internal error")
+		RespondError(w, r, err)
 		return
 	}
 
@@ -96,15 +114,30 @@ func parsePagination(r *http.Request) model.PaginationRequest {
 }
 
 func (h *TransactionHandler) ListByUser(w http.ResponseWriter, r *http.Request) {
+	authUserID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		RespondError(w, r, ErrUnauthorized)
+		return
+	}
+
+	requestedUserID := r.URL.Query().Get("user_id")
+	if requestedUserID == "" {
+		requestedUserID = authUserID
+	}
+
+	if requestedUserID != authUserID {
+		RespondError(w, r, ErrForbidden)
+		return
+	}
+
 	userID := r.URL.Query().Get("user_id")
 	if userID == "" {
-		respondError(w, http.StatusBadRequest, "user_id query param is required")
+		RespondError(w, r, repository.ErrInvalidInput)
 		return
 	}
 
 	// Parse pagination parameters from URL
 	pagination := parsePagination(r)
-
 
 	// Create a context with timeout for the database operation
 	ctx, cancel := context.WithTimeout(r.Context(), dbTimeout)
@@ -118,7 +151,7 @@ func (h *TransactionHandler) ListByUser(w http.ResponseWriter, r *http.Request) 
 		pagination.PageSize,
 	)
 	if err != nil {
-		respondError(w, http.StatusInternalServerError, "internal error")
+		RespondError(w, r, err)
 		return
 	}
 
@@ -139,8 +172,4 @@ func respondJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(payload)
-}
-
-func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, map[string]string{"error": message})
 }

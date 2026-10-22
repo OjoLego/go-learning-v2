@@ -33,7 +33,7 @@ func (s *BudgetService) CheckBudgetStatus(ctx context.Context, userID, category 
 	}
 
 	if b.Limit <= 0 {
-		return "", fmt.Errorf("invalid budget limit for category %q", category)
+		return "", ErrInvalidLimit
 	}
 
 	ratio := b.Spent / b.Limit

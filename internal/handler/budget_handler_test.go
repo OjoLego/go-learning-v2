@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"dime-api/internal/middleware"
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 	"dime-api/internal/service"
@@ -66,31 +67,15 @@ func TestBudgetHandler_Status(t *testing.T) {
 	tests := []struct {
 		name           string
 		url            string
+		authUserID     string
 		expectedStatus int
 		checkBody      bool
 		expectedBody   map[string]string
 	}{
 		{
-			name:           "missing user_id param",
+			name:           "user_id defaults to authenticated user",
 			url:            "/budgets/status?category=food",
-			expectedStatus: http.StatusBadRequest,
-			checkBody:      false,
-		},
-		{
-			name:           "missing category param",
-			url:            "/budgets/status?user_id=user1",
-			expectedStatus: http.StatusBadRequest,
-			checkBody:      false,
-		},
-		{
-			name:           "budget not found",
-			url:            "/budgets/status?user_id=user1&category=nonexistent",
-			expectedStatus: http.StatusNotFound,
-			checkBody:      false,
-		},
-		{
-			name:           "valid request - within budget",
-			url:            "/budgets/status?user_id=user1&category=food",
+			authUserID:     "user1",
 			expectedStatus: http.StatusOK,
 			checkBody:      true,
 			expectedBody: map[string]string{
@@ -99,13 +84,47 @@ func TestBudgetHandler_Status(t *testing.T) {
 				"status":   "within budget",
 			},
 		},
+		{
+			name:           "missing category param",
+			url:            "/budgets/status?user_id=user1",
+			authUserID:     "user1",
+			expectedStatus: http.StatusBadRequest,
+			checkBody:      false,
+		},
+		{
+			name:           "budget not found",
+			url:            "/budgets/status?user_id=user1&category=nonexistent",
+			authUserID:     "user1",
+			expectedStatus: http.StatusNotFound,
+			checkBody:      false,
+		},
+		{
+			name:           "valid request - within budget",
+			url:            "/budgets/status?user_id=user1&category=food",
+			authUserID:     "user1",
+			expectedStatus: http.StatusOK,
+			checkBody:      true,
+			expectedBody: map[string]string{
+				"user_id":  "user1",
+				"category": "food",
+				"status":   "within budget",
+			},
+		},
+		{
+			name:           "forbidden - different user",
+			url:            "/budgets/status?user_id=user2&category=food",
+			authUserID:     "user1",
+			expectedStatus: http.StatusForbidden,
+			checkBody:      false,
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Create request
+			// Create request with authenticated user in context
 			req := httptest.NewRequest(http.MethodGet, tt.url, nil)
-			
+			req = req.WithContext(middleware.WithUserID(req.Context(), tt.authUserID))
+
 			// Create response recorder
 			rec := httptest.NewRecorder()
 

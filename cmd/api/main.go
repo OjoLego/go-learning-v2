@@ -3,15 +3,22 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"dime-api/internal/config"
 	"dime-api/internal/database"
 	"dime-api/internal/handler"
+	"dime-api/internal/metrics"
+	"dime-api/internal/middleware"
+	"dime-api/internal/ratelimit"
 	"dime-api/internal/repository"
 	"dime-api/internal/service"
 	"dime-api/internal/swagger"
@@ -20,6 +27,7 @@ import (
 	"github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -33,6 +41,14 @@ func main() {
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("Invalid configuration: %v", err)
 	}
+
+	// Configure structured logging based on config
+	level := new(slog.LevelVar)
+	if err := level.UnmarshalText([]byte(cfg.LogLevel)); err != nil {
+		level.Set(slog.LevelInfo)
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
+	slog.SetDefault(logger)
 
 	slog.Info("Starting dime-api server",
 		slog.String("version", "1.0.0"),
@@ -84,26 +100,86 @@ func main() {
 	txSvc := service.NewTransactionService(txRepo, budgetSvc, txManager)
 	txHandler := handler.NewTransactionHandler(txSvc)
 
+	authHandler := handler.NewAuthHandler(cfg)
+	rateLimiter := ratelimit.NewMemoryLimiter(rate.Limit(cfg.RateLimitRPS), cfg.RateLimitBurst)
+
+	metricsCollector := metrics.New()
+	healthHandler := handler.NewHealthHandler(db)
+
 	// --- Routes ---
-	mux := http.NewServeMux()
 
-	mux.HandleFunc("POST /transactions", txHandler.Create)
-	mux.HandleFunc("GET /transactions/{id}", txHandler.GetByID)
-	mux.HandleFunc("GET /transactions", txHandler.ListByUser)
+	// Public mux
+	publicMux := http.NewServeMux()
+	publicMux.HandleFunc("POST /auth/token", authHandler.Token)
+	publicMux.HandleFunc("GET /health", healthHandler.Check)
+	publicMux.HandleFunc("GET /swagger", swagger.UI)
+	publicMux.HandleFunc("GET /openapi.yaml", swagger.OpenAPI)
+	publicMux.HandleFunc("GET /metrics", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(metricsCollector.Snapshot())
+	})
 
-	mux.HandleFunc("POST /budgets", budgetHandler.Create)
-	mux.HandleFunc("GET /budgets/status", budgetHandler.Status)
+	// Protected mux
+	protectedMux := http.NewServeMux()
+	protectedMux.HandleFunc("POST /transactions", txHandler.Create)
+	protectedMux.HandleFunc("GET /transactions/{id}", txHandler.GetByID)
+	protectedMux.HandleFunc("GET /transactions", txHandler.ListByUser)
+	protectedMux.HandleFunc("POST /budgets", budgetHandler.Create)
+	protectedMux.HandleFunc("GET /budgets/status", budgetHandler.Status)
 
-	mux.HandleFunc("GET /swagger", swagger.UI)
-	mux.HandleFunc("GET /openapi.yaml", swagger.OpenAPI)
+	// Wrap protected routes with auth middleware
+	protectedHandler := middleware.AuthMiddleware(cfg.JWTSecret)(protectedMux)
 
-	// Health check endpoint
-	mux.HandleFunc("GET /health", healthCheck(db))
+	// Combine
+	mainMux := http.NewServeMux()
+	mainMux.Handle("/", publicMux)
+	mainMux.Handle("/transactions", protectedHandler)
+	mainMux.Handle("/transactions/", protectedHandler)
+	mainMux.Handle("/budgets", protectedHandler)
+	mainMux.Handle("/budgets/", protectedHandler)
 
-	handlerWithMiddleware := loggingMiddleware(mux)
+	// Add logging and request ID
+	var handler http.Handler = mainMux
+	handler = middleware.SecurityHeadersMiddleware(handler)
+	handler = middleware.CORSMiddleware(cfg.CORSAllowedOrigins)(handler)
+	handler = middleware.RateLimitMiddleware(rateLimiter, middleware.RateLimitKey)(handler)
+	handler = middleware.StructuredLogger(metricsCollector)(handler)
+	handler = middleware.RequestIDMiddleware(handler)
 
-	fmt.Println("Server running on :8080")
-	log.Fatal(http.ListenAndServe(":8080", handlerWithMiddleware))
+	srv := &http.Server{
+		Addr:         ":" + cfg.Server.Port,
+		Handler:      handler,
+		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
+		IdleTimeout:  120 * time.Second,
+	}
+
+	slog.Info("Server starting", slog.String("addr", srv.Addr))
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server error", slog.String("error", err.Error()))
+			os.Exit(1)
+		}
+	}()
+
+	// Wait for interrupt signal
+	sigCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	<-sigCtx.Done()
+	slog.Info("Shutdown signal received, gracefully shutting down")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown failed", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	slog.Info("Server stopped gracefully")
+
 }
 
 // connectDB establishes connection to PostgreSQL using configuration
@@ -187,56 +263,20 @@ func runMigrations(db *sql.DB) error {
 }
 
 func checkMigrationStatus(db *sql.DB) (version uint, dirty bool, err error) {
-    driver, err := postgres.WithInstance(db, &postgres.Config{})
-    if err != nil {
-        return 0, false, err
-    }
-    
-    m, err := migrate.NewWithDatabaseInstance(
-        "file://migrations",
-        "postgres",
-        driver,
-    )
-    if err != nil {
-        return 0, false, err
-    }
-    
-    version, dirty, err = m.Version()
-    return version, dirty, err
-}
-
-// healthCheck returns a handler that checks database connectivity
-func healthCheck(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Log pool stats on each health check
-		logPoolStats(db)
-
-		// Check database connectivity with a 5-second timeout
-		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-		defer cancel()
-
-		if err := db.PingContext(ctx); err != nil {
-			slog.Error("Health check failed", slog.String("error", err.Error()))
-			w.WriteHeader(http.StatusServiceUnavailable)
-			fmt.Fprintf(w, `{"status":"unhealthy","error":"database unreachable"}`)
-			return
-		}
-
-		// Get pool stats
-		stats := db.Stats()
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, `{"status":"healthy","open_connections":%d,"in_use":%d,"idle":%d}`,
-			stats.OpenConnections, stats.InUse, stats.Idle)
+	driver, err := postgres.WithInstance(db, &postgres.Config{})
+	if err != nil {
+		return 0, false, err
 	}
-}
 
-// loggingMiddleware wraps a handler with request timing
-func loggingMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s took %v", r.Method, r.URL.Path, time.Since(start))
-	})
+	m, err := migrate.NewWithDatabaseInstance(
+		"file://migrations",
+		"postgres",
+		driver,
+	)
+	if err != nil {
+		return 0, false, err
+	}
+
+	version, dirty, err = m.Version()
+	return version, dirty, err
 }

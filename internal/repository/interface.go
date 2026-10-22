@@ -11,6 +11,7 @@ import (
 var (
 	ErrNotFound       = errors.New("transaction not found")
 	ErrBudgetNotFound = errors.New("budget not found")
+	ErrInvalidInput   = errors.New("invalid input")
 )
 
 // BudgetRepository defines the interface for budget data access
@@ -29,9 +30,8 @@ type TransactionRepository interface {
 	// NEW: Paginated version
 	// Returns: transactions, total count, error
 	ListByUserPaginated(
-		ctx context.Context, 
-		userID string, 
+		ctx context.Context,
+		userID string,
 		offset, limit int,
 	) ([]model.Transaction, int, error)
-
 }

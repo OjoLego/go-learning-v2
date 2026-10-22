@@ -6,10 +6,41 @@ info:
 servers:
   - url: http://localhost:8080
 paths:
+  /auth/token:
+    post:
+      summary: Generate a JWT token for a user
+      operationId: createToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TokenRequest'
+      responses:
+        '200':
+          description: Token generated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /transactions:
     post:
       summary: Create a transaction
       operationId: createTransaction
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -36,9 +67,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - cannot access another user's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
     get:
       summary: List a user's transactions (paginated)
       operationId: listTransactionsByUser
+      security:
+        - bearerAuth: []
       parameters:
         - name: user_id
           in: query
@@ -79,10 +130,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - cannot access another user's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /transactions/{id}:
     get:
       summary: Get a transaction by ID
       operationId: getTransactionByID
+      security:
+        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -96,8 +167,26 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Transaction'
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - cannot access another user's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Transaction not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
           content:
             application/json:
               schema:
@@ -106,6 +195,8 @@ paths:
     post:
       summary: Create a budget
       operationId: createBudget
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -131,10 +222,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - cannot access another user's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
   /budgets/status:
     get:
       summary: Check budget status
       operationId: checkBudgetStatus
+      security:
+        - bearerAuth: []
       parameters:
         - name: user_id
           in: query
@@ -161,14 +272,92 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing or invalid authorization token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden - cannot access another user's data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: Budget not found
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /health:
+    get:
+      summary: Health check
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service is unhealthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /metrics:
+    get:
+      summary: Metrics snapshot
+      operationId: metricsSnapshot
+      responses:
+        '200':
+          description: Current metrics counters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetricsResponse'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT token obtained from POST /auth/token
   schemas:
+    TokenRequest:
+      type: object
+      required:
+        - user_id
+      properties:
+        user_id:
+          type: string
+          description: Unique identifier for the user
+    TokenResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          description: JWT bearer token
     CreateTransactionRequest:
       type: object
       required:
@@ -191,6 +380,8 @@ components:
           exclusiveMinimum: true
         category:
           type: string
+          minLength: 1
+          maxLength: 50
     Transaction:
       type: object
       properties:
@@ -222,6 +413,8 @@ components:
           type: string
         category:
           type: string
+          minLength: 1
+          maxLength: 50
         limit:
           type: number
           format: double
@@ -307,8 +500,37 @@ components:
         total_pages: 8
         has_next: true
         has_prev: false
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - unhealthy
+        time:
+          type: string
+          format: date-time
+    MetricsResponse:
+      type: object
+      additionalProperties:
+        type: integer
+        format: int64
+      example:
+        requests_total: 42
+        requests_200: 38
+        requests_429: 4
     ErrorResponse:
       type: object
       properties:
         error:
-          type: string
+          type: object
+          properties:
+            code:
+              type: string
+              description: Machine-readable error code
+              example: INVALID_REQUEST
+            message:
+              type: string
+              description: Human-readable error message
+              example: amount must be greater than zero

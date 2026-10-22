@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -12,6 +13,9 @@ import (
 	"dime-api/internal/model"
 	"dime-api/internal/repository"
 )
+
+var ErrInvalidAmount = errors.New("amount must be greater than zero")
+var ErrInvalidLimit = errors.New("limit must be greater than zero")
 
 type TransactionService struct {
 	repo          repository.TransactionRepository // depends on the INTERFACE, not a concrete type
@@ -33,7 +37,7 @@ func NewTransactionService(
 
 func (s *TransactionService) RecordTransaction(ctx context.Context, userID string, txType model.TransactionType, amount float64, category string) (model.Transaction, error) {
 	if amount <= 0 {
-		return model.Transaction{}, fmt.Errorf("amount must be positive, got %.2f", amount)
+		return model.Transaction{}, ErrInvalidAmount
 	}
 
 	t := model.Transaction{
@@ -105,7 +109,7 @@ func (s *TransactionService) RecordTransactionAtomic(
 	category string,
 ) (model.Transaction, error) {
 	if amount <= 0 {
-		return model.Transaction{}, fmt.Errorf("amount must be positive, got %.2f", amount)
+		return model.Transaction{}, ErrInvalidAmount
 	}
 
 	// Create the transaction object
@@ -171,7 +175,7 @@ func (s *TransactionService) GetUserTransactionsPaginated(
 ) ([]model.Transaction, int, error) {
 	// Calculate offset
 	offset := (page - 1) * pageSize
-	
+
 	// Call paginated repository method
 	return s.repo.ListByUserPaginated(ctx, userID, offset, pageSize)
 }

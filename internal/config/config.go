@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/caarlos0/env/v11"
 )
@@ -21,16 +22,29 @@ type Config struct {
 
 	// Logging
 	LogLevel string `env:"LOG_LEVEL" envDefault:"info"`
+
+	JWTSecret     string `env:"JWT_SECRET" envDefault:"dev-secret-do-not-use-in-production"`
+	JWTExpiryMins int    `env:"JWT_EXPIRY_MINUTES" envDefault:"60"`
+
+	// Rate limiting
+	RateLimitRPS   int `env:"RATE_LIMIT_RPS" envDefault:"10"`
+	RateLimitBurst int `env:"RATE_LIMIT_BURST" envDefault:"20"`
+
+	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS" envSeparator:"," envDefault:"*"`
 }
 
 // DatabaseConfig holds database connection settings
 type DatabaseConfig struct {
-	Host     string `env:"DB_HOST" envDefault:"localhost"`
-	Port     int    `env:"DB_PORT" envDefault:"5432"`
-	User     string `env:"DB_USER" envDefault:"dime_user"`
-	Password string `env:"DB_PASSWORD" envDefault:""`
-	DBName   string `env:"DB_NAME" envDefault:"dime"`
-	SSLMode  string `env:"DB_SSL_MODE" envDefault:"disable"`
+	Host            string        `env:"DB_HOST" envDefault:"localhost"`
+	Port            int           `env:"DB_PORT" envDefault:"5432"`
+	User            string        `env:"DB_USER" envDefault:"dime_user"`
+	Password        string        `env:"DB_PASSWORD" envDefault:""`
+	DBName          string        `env:"DB_NAME" envDefault:"dime"`
+	SSLMode         string        `env:"DB_SSL_MODE" envDefault:"disable"`
+	MaxOpenConns    int           `env:"DB_MAX_OPEN_CONNS" envDefault:"25"`
+	MaxIdleConns    int           `env:"DB_MAX_IDLE_CONNS" envDefault:"10"`
+	ConnMaxLifetime time.Duration `env:"DB_CONN_MAX_LIFETIME" envDefault:"5m"`
+	ConnMaxIdleTime time.Duration `env:"DB_CONN_IDLE_TIME" envDefault:"1m"`
 }
 
 // ServerConfig holds HTTP server settings
@@ -407,19 +421,19 @@ func (c *Config) validatePasswordStrength() string {
 // ValidateWithWarnings validates config and returns warnings for non-critical issues
 func (c *Config) ValidateWithWarnings() (error, []string) {
 	err := c.Validate()
-	
+
 	var warnings []string
-	
+
 	// Add warnings for recommended but not required settings
 	if !c.IsProduction() {
 		if c.Database.SSLMode != "disable" {
 			warnings = append(warnings, "SSL is enabled for non-production environment (this is fine but may slow down local development)")
 		}
 	}
-	
+
 	if c.LogLevel == "debug" && c.IsProduction() {
 		warnings = append(warnings, "LOG_LEVEL is 'debug' in production (may impact performance and log sensitive data)")
 	}
-	
+
 	return err, warnings
 }
